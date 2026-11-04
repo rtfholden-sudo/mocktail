@@ -4800,48 +4800,77 @@ int mocktail::legacy::Run(const runtime::CommandLineOptions& options,
         sdl_window != nullptr ? SDL_GetDisplayForWindow(sdl_window) : 0;
     const SDL_DisplayMode* mode =
         display != 0 ? SDL_GetCurrentDisplayMode(display) : nullptr;
+    // Fall back to the configured window size when the host display mode
+    // cannot be queried; the picker must still run in that case.
+    mocktail::runtime::DisplaySize native_display{runtime_config.window().width,
+                                                  runtime_config.window().height};
     if (mode != nullptr && mode->w > 0 && mode->h > 0) {
       // SDL mode dimensions need pixel_density to become physical pixels.
       const float density = mode->pixel_density > 0.0f ? mode->pixel_density
                                                        : 1.0f;
-      const mocktail::runtime::DisplaySize native_display{
+      native_display = {
           static_cast<std::int32_t>(std::lround(mode->w * density)),
           static_cast<std::int32_t>(std::lround(mode->h * density))};
-      // The render resolution reported to the Roblox client can be chosen
-      // independently of the window size: the window keeps its configured
-      // size and the rendered frames are scaled to fit it.
-      mocktail::runtime::DisplaySize render_size = native_display;
-      mocktail::runtime::RenderResolution preset =
-          mocktail::runtime::RenderResolution::kAsk;
-      const std::string configured =
-          GetEnvString("MOCKTAIL_RENDER_RESOLUTION", "ask");
-      if (!mocktail::runtime::ParseRenderResolution(configured, &preset)) {
-        preset = mocktail::runtime::RenderResolution::kAsk;
-      }
-      if (preset == mocktail::runtime::RenderResolution::kAsk) {
-        if (window_initialised && !IsEnabled("MOCKTAIL_HEADLESS")) {
-          mocktail::runtime::DisplaySize chosen;
-          if (mocktail::window::PromptRenderResolutionChoice(native_display,
-                                                             &chosen)) {
-            render_size = chosen;
-          }
-        }
-      } else {
-        render_size =
-            mocktail::runtime::RenderResolutionSize(preset, native_display);
-      }
-      const std::string display_size =
-          std::to_string(render_size.width) + "x" +
-          std::to_string(render_size.height);
-      setenv(mocktail::runtime::kDisplaySizeEnvironment, display_size.c_str(),
-             1);
-      std::cout << "  [window] host display "
-                << std::to_string(native_display.width) + "x" +
-                       std::to_string(native_display.height)
-                << " pixels; render resolution " << display_size
-                << " (window size unchanged)\n"
+    } else {
+      std::cerr << "  [window] WARNING: host display mode unavailable; "
+                << "treating " << native_display.width << "x"
+                << native_display.height << " as native\n"
                 << std::flush;
     }
+    // The render resolution reported to the Roblox client can be chosen
+    // independently of the window size: the window keeps its configured
+    // size and the rendered frames are scaled to fit it.
+    mocktail::runtime::DisplaySize render_size = native_display;
+    mocktail::runtime::RenderResolution preset =
+        mocktail::runtime::RenderResolution::kAsk;
+    const std::string configured =
+        GetEnvString("MOCKTAIL_RENDER_RESOLUTION", "ask");
+    if (!mocktail::runtime::ParseRenderResolution(configured, &preset)) {
+      std::cerr << "  [window] WARNING: invalid MOCKTAIL_RENDER_RESOLUTION='"
+                << configured << "'; falling back to ask\n"
+                << std::flush;
+      preset = mocktail::runtime::RenderResolution::kAsk;
+    }
+    std::cout << "  [window] render resolution mode: "
+              << mocktail::runtime::RenderResolutionName(preset) << "\n"
+              << std::flush;
+    if (preset == mocktail::runtime::RenderResolution::kAsk) {
+      if (IsEnabled("MOCKTAIL_HEADLESS")) {
+        std::cout << "  [window] render-resolution picker skipped "
+                     "(headless mode)\n"
+                  << std::flush;
+      } else {
+        mocktail::runtime::DisplaySize chosen;
+        if (mocktail::window::PromptRenderResolutionChoice(native_display,
+                                                           &chosen)) {
+          render_size = chosen;
+          std::cout << "  [window] render-resolution picker: chose "
+                    << chosen.width << "x" << chosen.height << "\n"
+                    << std::flush;
+        } else {
+          std::cout << "  [window] render-resolution picker closed or "
+                       "unavailable; using native "
+                    << native_display.width << "x" << native_display.height
+                    << "\n"
+                    << std::flush;
+        }
+      }
+    } else {
+      render_size =
+          mocktail::runtime::RenderResolutionSize(preset, native_display);
+    }
+    const std::string display_size = std::to_string(render_size.width) + "x" +
+                                     std::to_string(render_size.height);
+    setenv(mocktail::runtime::kDisplaySizeEnvironment, display_size.c_str(), 1);
+    std::cout << "  [window] host display "
+              << std::to_string(native_display.width) + "x" +
+                     std::to_string(native_display.height)
+              << " pixels; render resolution " << display_size
+              << " (window size unchanged)\n"
+              << std::flush;
+  } else {
+    std::cerr << "  [window] render-resolution picker skipped (no window)\n"
+              << std::flush;
   }
   if (window_initialised) {
     const mocktail::window::WindowViewportSnapshot viewport =
