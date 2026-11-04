@@ -33,6 +33,7 @@ on:
     branches:
       - arena/4eaa2977-mocktail
       - arena/daf335bb-mocktail
+      - arena/227e810d-mocktail
 
 permissions:
   actions: read
@@ -138,7 +139,8 @@ jobs:
         if: >-
           github.event_name == 'push' &&
           (github.ref == 'refs/heads/arena/4eaa2977-mocktail' ||
-           github.ref == 'refs/heads/arena/daf335bb-mocktail') &&
+           github.ref == 'refs/heads/arena/daf335bb-mocktail' ||
+           github.ref == 'refs/heads/arena/227e810d-mocktail') &&
           matrix.arch == 'x86_64'
         env:
           GH_TOKEN: ${{ github.token }}
