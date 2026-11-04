@@ -171,6 +171,12 @@ Mocktail detects the host CPU and GPU at startup and records them in
 - **Frame rate on fixed-refresh panels.** `graphics.frame_rate_limit: display`
   caps to the detected refresh rate; `unlimited` with `graphics.vsync: off`
   removes the cap (see `make run-unlimited`).
+- **Render resolution vs. window size.** `window.render_resolution` controls the
+  resolution Roblox renders at — `ask` (default) shows a startup picker with
+  720p / 1080p / native, `native` uses the host display, `720p`/`1080p` are
+  fixed. The SDL window keeps its configured `window.width`/`window.height` and
+  the rendered image is scaled to fit, so dropping to 720p on an Iris Xe iGPU is
+  a cheap FPS win without shrinking the window.
 
 ## Privacy: telemetry is disabled
 

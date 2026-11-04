@@ -61,6 +61,7 @@
 #include "mocktail/graphics/bionic_egl_bridge.h"
 #include "runtime/device_memory_profile.h"
 #include "runtime/display_size.h"
+#include "runtime/render_resolution.h"
 #include "runtime/environment.h"
 #include "runtime/discord_rpc.h"
 #include "runtime/jnivm_platform_web_callbacks.h"
@@ -4803,12 +4804,42 @@ int mocktail::legacy::Run(const runtime::CommandLineOptions& options,
       // SDL mode dimensions need pixel_density to become physical pixels.
       const float density = mode->pixel_density > 0.0f ? mode->pixel_density
                                                        : 1.0f;
+      const mocktail::runtime::DisplaySize native_display{
+          static_cast<std::int32_t>(std::lround(mode->w * density)),
+          static_cast<std::int32_t>(std::lround(mode->h * density))};
+      // The render resolution reported to the Roblox client can be chosen
+      // independently of the window size: the window keeps its configured
+      // size and the rendered frames are scaled to fit it.
+      mocktail::runtime::DisplaySize render_size = native_display;
+      mocktail::runtime::RenderResolution preset =
+          mocktail::runtime::RenderResolution::kAsk;
+      const std::string configured =
+          GetEnvString("MOCKTAIL_RENDER_RESOLUTION", "ask");
+      if (!mocktail::runtime::ParseRenderResolution(configured, &preset)) {
+        preset = mocktail::runtime::RenderResolution::kAsk;
+      }
+      if (preset == mocktail::runtime::RenderResolution::kAsk) {
+        if (window_initialised && !IsEnabled("MOCKTAIL_HEADLESS")) {
+          mocktail::runtime::DisplaySize chosen;
+          if (mocktail::window::PromptRenderResolutionChoice(native_display,
+                                                             &chosen)) {
+            render_size = chosen;
+          }
+        }
+      } else {
+        render_size =
+            mocktail::runtime::RenderResolutionSize(preset, native_display);
+      }
       const std::string display_size =
-          std::to_string(std::lround(mode->w * density)) + "x" +
-          std::to_string(std::lround(mode->h * density));
+          std::to_string(render_size.width) + "x" +
+          std::to_string(render_size.height);
       setenv(mocktail::runtime::kDisplaySizeEnvironment, display_size.c_str(),
              1);
-      std::cout << "  [window] host display " << display_size << " pixels\n"
+      std::cout << "  [window] host display "
+                << std::to_string(native_display.width) + "x" +
+                       std::to_string(native_display.height)
+                << " pixels; render resolution " << display_size
+                << " (window size unchanged)\n"
                 << std::flush;
     }
   }

@@ -11,6 +11,7 @@
 #include "runtime/environment.h"
 #include "runtime/frame_rate_policy.h"
 #include "runtime/performance_policy.h"
+#include "runtime/render_resolution.h"
 
 namespace mocktail {
 namespace runtime {
@@ -32,6 +33,10 @@ struct WindowConfig {
   // that size unless the user explicitly requests high-density rendering.
   bool high_dpi = false;
   bool high_dpi_valid = true;
+  // Render resolution reported to the Roblox client: ask, native, 720p, 1080p.
+  // The window keeps its configured size; frames are scaled to fit it.
+  std::string render_resolution = "ask";
+  bool render_resolution_valid = true;
 };
 
 struct InputCapabilityConfig {

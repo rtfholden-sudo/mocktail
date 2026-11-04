@@ -155,6 +155,13 @@ window:
   # Boolean (default: false): render at physical display-pixel density instead
   # of the logical desktop resolution. Enable only for sharper high-DPI output.
   high_dpi: false
+  # String (default: ask): resolution Roblox renders at. The window keeps its
+  # configured width/height and the rendered image is scaled to fit it, so a
+  # lower render resolution is a cheap FPS win on weak GPUs (e.g. Iris Xe).
+  # `ask` shows a startup picker (720p / 1080p / native) in windowed mode;
+  # `native` uses the host display resolution. Supported: ask, native, 720p,
+  # 1080p.
+  # render_resolution: ask
 
 network:
   # Boolean (default: false): follow the host HTTP/SOCKS5 proxy and
