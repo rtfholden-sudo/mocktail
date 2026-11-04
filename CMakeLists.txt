@@ -280,6 +280,7 @@ add_library(mocktail_runtime STATIC
   src/runtime/graphics_launch_policy.cc
   src/runtime/host_hardware.cc
   src/runtime/host_os.cc
+  src/runtime/render_resolution.cc
   src/runtime/http_client_policy.cc
   src/runtime/memory_limit.cc
   src/runtime/owned_pthread.cc

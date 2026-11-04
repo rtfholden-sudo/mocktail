@@ -185,6 +185,7 @@ bool ValidateAndMap(const ValueMap& yaml, ValueMap* environment,
        "window.height",
        "window.title",
        "window.high_dpi",
+       "window.render_resolution",
        "input.touch_enabled",
       "compatibility.desktop_playability",
       "network.use_system_proxy",
@@ -447,6 +448,17 @@ bool ValidateAndMap(const ValueMap& yaml, ValueMap* environment,
       return false;
     }
     (*environment)["MOCKTAIL_WIN_HIGH_DPI"] = parsed ? "1" : "0";
+  }
+  if (const auto render_resolution = value("window.render_resolution");
+      render_resolution.has_value()) {
+    RenderResolution parsed = RenderResolution::kAsk;
+    if (!ParseRenderResolution(*render_resolution, &parsed)) {
+      *error =
+          "window.render_resolution must be ask, native, 720p, or 1080p";
+      return false;
+    }
+    (*environment)["MOCKTAIL_RENDER_RESOLUTION"] =
+        std::string(RenderResolutionName(parsed));
   }
   if (const auto touch = value("input.touch_enabled"); touch.has_value()) {
     bool parsed = false;
@@ -816,6 +828,8 @@ RuntimeConfigLoadResult LoadRuntimeConfig(
     result.error = "CA bundle path is invalid";
   } else if (!result.config.discord_rpc_valid()) {
     result.error = "Discord Rich Presence configuration is invalid";
+  } else if (!result.config.window().render_resolution_valid) {
+    result.error = "render resolution must be ask, native, 720p, or 1080p";
   }
   return result;
 }
@@ -884,6 +898,12 @@ bool ExportRuntimeConfigEnvironment(const RuntimeConfig& config,
     }
     return false;
   }
+  if (!config.window().render_resolution_valid) {
+    if (error != nullptr) {
+      *error = "cannot export an invalid render resolution";
+    }
+    return false;
+  }
   const DeviceProfile& device = config.device_profile();
   const bool base_exported =
       SetEnvironmentValue("MOCKTAIL_HEADLESS", config.headless() ? "1" : "0",
@@ -921,6 +941,8 @@ bool ExportRuntimeConfigEnvironment(const RuntimeConfig& config,
       SetEnvironmentValue("MOCKTAIL_WIN_TITLE", config.window().title, error) &&
       SetEnvironmentValue("MOCKTAIL_WIN_HIGH_DPI",
                           config.window().high_dpi ? "1" : "0", error) &&
+      SetEnvironmentValue("MOCKTAIL_RENDER_RESOLUTION",
+                          config.window().render_resolution, error) &&
       SetEnvironmentValue(
           "MOCKTAIL_TOUCH_MODE",
           config.input_capabilities().touch_enabled ? "on" : "off", error) &&

@@ -142,15 +142,18 @@ TEST(RuntimeConfigBootstrapTest,
            "# frame_rate_limit: -1",
            "# Optional presentation synchronization override: auto, on, or "
            "off.\n  # vsync: off",
-           "# physical CPU core. A place's Lua/main thread can still remain "
-           "serial.\n  multithreaded_rendering: false",
+           "# bursts scale up to every logical thread (see worker_cores).\n  "
+           "multithreaded_rendering: false",
            "# sizes and coalesces midphase work. Supported: auto, latency, "
            "throughput.\n  physics_worker_mode: throughput",
            "# Integer MiB (default: 0): hard RAM cap for the Mocktail process "
            "tree.\n  # 0 disables the cap.",
            "# String (default: auto): request Feral GameMode when its host "
            "daemon and\n  # client library are available. Supported values: "
-           "auto, on, off.\n  gamemode: auto",
+           "auto, on, off.\n  # Bazzite (immutable Fedora) ships the gamemoded "
+           "daemon enabled, so the\n  # default `auto` activates it there; the "
+           "Flatpak build already talks to\n  # com.feralinteractive.GameMode. "
+           "See packaging/bazzite/README.md.\n  gamemode: auto",
            "# To pin output, copy an exact SDL device name printed during "
            "startup.\n  output_device: default",
            "# between boots; prefer the exact device name when it is unique.\n"
@@ -178,6 +181,12 @@ TEST(RuntimeConfigBootstrapTest,
             "# Boolean (default: false): render at physical display-pixel density instead\n  "
             "# of the logical desktop resolution. Enable only for sharper high-DPI output.\n  "
             "high_dpi: false",
+           "# String (default: ask): resolution Roblox renders at. The window keeps its\n  "
+           "# configured width/height and the rendered image is scaled to fit it, so a\n  "
+           "# lower render resolution is a cheap FPS win on weak GPUs (e.g. Iris Xe).\n  "
+           "# `ask` shows a startup picker (720p / 1080p / native) in windowed mode;\n  "
+           "# `native` uses the host display resolution. Supported: ask, native, 720p,\n  "
+           "# 1080p.\n  # render_resolution: ask",
            "# HostAbi profile, run two isolated canaries with the selected "
            "graphics\n  "
            "# backend, and promote only on success. An existing current "
@@ -733,6 +742,36 @@ performance:
   ASSERT_TRUE(loaded) << loaded.error;
   EXPECT_EQ(loaded.config.performance().worker_core_mode, WorkerCoreMode::kAll);
   EXPECT_TRUE(loaded.config.performance().worker_core_mode_valid);
+}
+
+TEST(RuntimeConfigFileTest, ValidatesAndLoadsRenderResolution) {
+  TemporaryDirectory temporary;
+  const std::filesystem::path invalid = temporary.Write(R"yaml(
+version: 1
+window:
+  render_resolution: 4k
+)yaml");
+  RuntimeConfigLoadResult loaded = LoadRuntimeConfig(MapEnvironment(), invalid);
+  EXPECT_FALSE(loaded);
+  EXPECT_NE(loaded.error.find("window.render_resolution"), std::string::npos);
+
+  const std::filesystem::path valid = temporary.Write(R"yaml(
+version: 1
+window:
+  render_resolution: 720p
+)yaml");
+  loaded = LoadRuntimeConfig(MapEnvironment(), valid);
+  ASSERT_TRUE(loaded) << loaded.error;
+  EXPECT_EQ(loaded.config.window().render_resolution, "720p");
+  EXPECT_TRUE(loaded.config.window().render_resolution_valid);
+
+  // Default is the interactive picker.
+  const std::filesystem::path empty = temporary.Write(R"yaml(
+version: 1
+)yaml");
+  loaded = LoadRuntimeConfig(MapEnvironment(), empty);
+  ASSERT_TRUE(loaded) << loaded.error;
+  EXPECT_EQ(loaded.config.window().render_resolution, "ask");
 }
 
 TEST(RuntimeConfigFileTest, ExportsAudioOutputDevice) {

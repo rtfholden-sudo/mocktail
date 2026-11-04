@@ -5,6 +5,7 @@
 #include <string>
 
 #include "runtime/environment.h"
+#include "runtime/render_resolution.h"
 #include "runtime/runtime_config.h"
 
 namespace mocktail {
