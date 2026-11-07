@@ -1544,65 +1544,6 @@ void* GetEGLConfig() { return g_state.egl_config; }
 void* GetNativeWindow() { return g_state.native_window; }
 void* GetBackendWindow() { return g_state.sdl_window; }
 
-bool PromptRenderResolutionChoice(const runtime::DisplaySize& native_display,
-                                  runtime::DisplaySize* chosen) {
-  if (chosen == nullptr) {
-    return false;
-  }
-  *chosen = native_display;
-  if (g_state.sdl_window == nullptr) {
-    return false;
-  }
-  constexpr int kButton720p = 1;
-  constexpr int kButton1080p = 2;
-  constexpr int kButtonNative = 3;
-  const std::string native_label = std::to_string(native_display.width) + "x" +
-                                   std::to_string(native_display.height);
-  const std::string label_720p = "720p (1280x720)";
-  const std::string label_1080p = "1080p (1920x1080)";
-  const std::string label_native = "Native (" + native_label + ")";
-  const SDL_MessageBoxButtonData buttons[] = {
-      {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT |
-           SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,
-       kButtonNative, label_native.c_str()},
-      {0, kButton720p, label_720p.c_str()},
-      {0, kButton1080p, label_1080p.c_str()},
-  };
-  SDL_MessageBoxData data = {
-      0,
-      g_state.sdl_window,
-      "Mocktail render resolution",
-      "Choose the resolution Roblox renders at.\n"
-      "The window keeps its current size; the image is scaled to fit.",
-      3,
-      buttons,
-      nullptr,
-  };
-  int button_id = 0;
-  if (!SDL_ShowMessageBox(&data, &button_id)) {
-    const char* first_error = SDL_GetError();
-    // Some compositors refuse modal dialogs parented to another window;
-    // retry once without a parent before giving up.
-    data.window = nullptr;
-    if (!SDL_ShowMessageBox(&data, &button_id)) {
-      std::fprintf(stderr,
-                   "  [window] render-resolution dialog failed: %s\n",
-                   first_error);
-      return false;
-    }
-  }
-  switch (button_id) {
-    case kButton720p:
-      *chosen = {1280, 720};
-      return true;
-    case kButton1080p:
-      *chosen = {1920, 1080};
-      return true;
-    default:
-      *chosen = native_display;
-      return true;
-  }
-}
 bool UsesDirectVulkan() { return g_state.direct_vulkan; }
 bool PollWindowSurfaceEvent(WindowSurfaceEvent* event) {
   return g_window_surface_lifecycle.Poll(event);

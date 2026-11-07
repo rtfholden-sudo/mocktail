@@ -428,6 +428,29 @@ bool MergeRuntimeClientSettingsOverrides(const FrameRatePolicy& frame_rate,
                                                  merged_json, error);
 }
 
+bool MergeFxaaClientSettingsOverrides(bool enabled,
+                                      std::string_view base_json,
+                                      std::string* merged_json,
+                                      std::string* error) {
+  if (merged_json == nullptr)
+    return false;
+  auto overrides = nlohmann::json::parse(base_json.empty() ? "{}" : base_json,
+                                         nullptr, false, true);
+  if (overrides.is_discarded() || !overrides.is_object()) {
+    if (error)
+      *error = "FXAA overrides must be a JSON object";
+    return false;
+  }
+  if (enabled) {
+    // Roblox has no dedicated FXAA toggle flag: FXAA runs as a post-fx pass
+    // when MSAA is off. Keep post-processing enabled and force MSAA off.
+    overrides["FFlagDisablePostFx"] = "False";
+    overrides["FIntDebugForceMSAASamples"] = "0";
+  }
+  *merged_json = overrides.dump();
+  return true;
+}
+
 bool MergeAudioDeviceMenuClientSettingsOverrides(std::string_view base_json,
                                                  std::string *merged_json,
                                                  std::string *error) {

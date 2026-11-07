@@ -14,6 +14,10 @@
 
 #include "runtime/render_resolution.h"
 
+#include <algorithm>
+#include <charconv>
+#include <cmath>
+
 namespace mocktail {
 namespace runtime {
 
@@ -51,6 +55,22 @@ std::string_view RenderResolutionName(RenderResolution resolution) {
   return "ask";
 }
 
+bool ParseRenderScale(std::string_view value, double* out) {
+  if (value.empty()) {
+    if (out != nullptr) *out = kMaxRenderScale;
+    return true;
+  }
+  double parsed = 0.0;
+  const char* begin = value.data();
+  const char* end = begin + value.size();
+  const auto result = std::from_chars(begin, end, parsed);
+  if (result.ec != std::errc() || result.ptr != end || !(parsed >= kMinRenderScale && parsed <= kMaxRenderScale)) {
+    return false;
+  }
+  if (out != nullptr) *out = parsed;
+  return true;
+}
+
 DisplaySize RenderResolutionSize(RenderResolution preset,
                                  const DisplaySize& native_display) {
   switch (preset) {
@@ -63,6 +83,22 @@ DisplaySize RenderResolutionSize(RenderResolution preset,
       return native_display;
   }
   return native_display;
+}
+
+DisplaySize ApplyRenderScale(const DisplaySize& size, double scale) {
+  if (!(scale > 0.0)) {
+    scale = kMaxRenderScale;
+  }
+  if (scale > kMaxRenderScale) {
+    scale = kMaxRenderScale;
+  }
+  if (scale < kMinRenderScale) {
+    scale = kMinRenderScale;
+  }
+  return {std::max<std::int32_t>(
+              320, static_cast<std::int32_t>(std::lround(size.width * scale))),
+          std::max<std::int32_t>(
+              180, static_cast<std::int32_t>(std::lround(size.height * scale)))};
 }
 
 }  // namespace runtime

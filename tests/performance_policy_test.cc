@@ -377,6 +377,24 @@ TEST(PerformancePolicyTest, RejectsConflictingOrMalformedOverrides) {
             std::string::npos);
 }
 
+TEST(PerformancePolicyTest, FxaaOverrideKeepsPostFxOnAndMsaaOff) {
+  std::string merged;
+  std::string error;
+  ASSERT_TRUE(MergeFxaaClientSettingsOverrides(
+      true, R"({"unrelated":123})", &merged, &error));
+  const auto parsed = nlohmann::json::parse(merged);
+  EXPECT_EQ(parsed.at("FFlagDisablePostFx"), "False");
+  EXPECT_EQ(parsed.at("FIntDebugForceMSAASamples"), "0");
+  EXPECT_EQ(parsed.at("unrelated"), 123);
+  // Disabled: base overrides pass through untouched.
+  ASSERT_TRUE(MergeFxaaClientSettingsOverrides(
+      false, R"({"FFlagDisablePostFx":"True"})", &merged, &error));
+  const auto off = nlohmann::json::parse(merged);
+  EXPECT_EQ(off.at("FFlagDisablePostFx"), "True");
+  EXPECT_FALSE(off.contains("FIntDebugForceMSAASamples"));
+  EXPECT_FALSE(MergeFxaaClientSettingsOverrides(true, "[]", &merged, &error));
+}
+
 TEST(PerformancePolicyTest, HostAudioMenuUsesBridgedDeviceQueries) {
   std::string merged;
   std::string error;

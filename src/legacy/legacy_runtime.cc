@@ -4827,7 +4827,7 @@ int mocktail::legacy::Run(const runtime::CommandLineOptions& options,
     const SDL_DisplayMode* mode =
         display != 0 ? SDL_GetCurrentDisplayMode(display) : nullptr;
     // Fall back to the configured window size when the host display mode
-    // cannot be queried; the picker must still run in that case.
+    // cannot be queried.
     mocktail::runtime::DisplaySize native_display{runtime_config.window().width,
                                                   runtime_config.window().height};
     if (mode != nullptr && mode->w > 0 && mode->h > 0) {
@@ -4843,48 +4843,37 @@ int mocktail::legacy::Run(const runtime::CommandLineOptions& options,
                 << native_display.height << " as native\n"
                 << std::flush;
     }
-    // The render resolution reported to the Roblox client can be chosen
-    // independently of the window size: the window keeps its configured
-    // size and the rendered frames are scaled to fit it.
-    mocktail::runtime::DisplaySize render_size = native_display;
+    // The render resolution reported to the Roblox client is configured via
+    // window.render_resolution / window.render_scale in config.yaml (no
+    // startup dialog): the window keeps its configured size and the rendered
+    // frames are scaled to fit it.
     mocktail::runtime::RenderResolution preset =
-        mocktail::runtime::RenderResolution::kAsk;
+        mocktail::runtime::RenderResolution::kNative;
     const std::string configured =
-        GetEnvString("MOCKTAIL_RENDER_RESOLUTION", "ask");
+        GetEnvString("MOCKTAIL_RENDER_RESOLUTION", "native");
     if (!mocktail::runtime::ParseRenderResolution(configured, &preset)) {
       std::cerr << "  [window] WARNING: invalid MOCKTAIL_RENDER_RESOLUTION='"
-                << configured << "'; falling back to ask\n"
+                << configured << "'; falling back to native\n"
                 << std::flush;
-      preset = mocktail::runtime::RenderResolution::kAsk;
+      preset = mocktail::runtime::RenderResolution::kNative;
     }
+    double render_scale = 1.0;
+    const std::string configured_scale =
+        GetEnvString("MOCKTAIL_RENDER_SCALE", "1.0");
+    if (!mocktail::runtime::ParseRenderScale(configured_scale, &render_scale)) {
+      std::cerr << "  [window] WARNING: invalid MOCKTAIL_RENDER_SCALE='"
+                << configured_scale << "'; falling back to 1.0\n"
+                << std::flush;
+      render_scale = 1.0;
+    }
+    const mocktail::runtime::DisplaySize render_size =
+        mocktail::runtime::ApplyRenderScale(
+            mocktail::runtime::RenderResolutionSize(preset, native_display),
+            render_scale);
     std::cout << "  [window] render resolution mode: "
-              << mocktail::runtime::RenderResolutionName(preset) << "\n"
+              << mocktail::runtime::RenderResolutionName(preset)
+              << ", scale: " << render_scale << "\n"
               << std::flush;
-    if (preset == mocktail::runtime::RenderResolution::kAsk) {
-      if (IsEnabled("MOCKTAIL_HEADLESS")) {
-        std::cout << "  [window] render-resolution picker skipped "
-                     "(headless mode)\n"
-                  << std::flush;
-      } else {
-        mocktail::runtime::DisplaySize chosen;
-        if (mocktail::window::PromptRenderResolutionChoice(native_display,
-                                                           &chosen)) {
-          render_size = chosen;
-          std::cout << "  [window] render-resolution picker: chose "
-                    << chosen.width << "x" << chosen.height << "\n"
-                    << std::flush;
-        } else {
-          std::cout << "  [window] render-resolution picker closed or "
-                       "unavailable; using native "
-                    << native_display.width << "x" << native_display.height
-                    << "\n"
-                    << std::flush;
-        }
-      }
-    } else {
-      render_size =
-          mocktail::runtime::RenderResolutionSize(preset, native_display);
-    }
     const std::string display_size = std::to_string(render_size.width) + "x" +
                                      std::to_string(render_size.height);
     setenv(mocktail::runtime::kDisplaySizeEnvironment, display_size.c_str(), 1);
@@ -4895,7 +4884,7 @@ int mocktail::legacy::Run(const runtime::CommandLineOptions& options,
               << " (window size unchanged)\n"
               << std::flush;
   } else {
-    std::cerr << "  [window] render-resolution picker skipped (no window)\n"
+    std::cerr << "  [window] no window; using default render resolution\n"
               << std::flush;
   }
   if (window_initialised) {

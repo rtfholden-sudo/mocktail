@@ -181,12 +181,19 @@ TEST(RuntimeConfigBootstrapTest,
             "# Boolean (default: false): render at physical display-pixel density instead\n  "
             "# of the logical desktop resolution. Enable only for sharper high-DPI output.\n  "
             "high_dpi: false",
-           "# String (default: ask): resolution Roblox renders at. The window keeps its\n  "
-           "# configured width/height and the rendered image is scaled to fit it, so a\n  "
-           "# lower render resolution is a cheap FPS win on weak GPUs (e.g. Iris Xe).\n  "
-           "# `ask` shows a startup picker (720p / 1080p / native) in windowed mode;\n  "
-           "# `native` uses the host display resolution. Supported: ask, native, 720p,\n  "
-           "# 1080p.\n  # render_resolution: ask",
+           "# String (default: native): resolution Roblox renders at. The window keeps\n  "
+           "# its configured width/height and the rendered image is scaled to fit it, so\n  "
+           "# a lower render resolution is a cheap FPS win on weak GPUs (e.g. Iris Xe).\n  "
+           "# `native` uses the host display resolution. Supported: native, 720p, 1080p\n  "
+           "# (`ask` is accepted as an alias of native; no startup dialog is shown).\n  "
+           "# render_resolution: native",
+           "# Number (default: 1.0): extra render-resolution scale applied on top of\n  "
+           "# render_resolution, between 0.25 and 1.0. 0.5 renders at half the chosen\n  "
+           "# resolution (e.g. 640x360 for 720p) and the window upscales the frames;\n  "
+           "# pair with fxaa: true to soften the upscale.\n  # render_scale: 1.0",
+           "# Boolean (default: false): enable Roblox's FXAA post-process (MSAA off,\n  "
+           "# post-processing on). Recommended together with render_scale < 1.\n  "
+           "# fxaa: false",
            "# HostAbi profile, run two isolated canaries with the selected "
            "graphics\n  "
            "# backend, and promote only on success. An existing current "
@@ -765,13 +772,52 @@ window:
   EXPECT_EQ(loaded.config.window().render_resolution, "720p");
   EXPECT_TRUE(loaded.config.window().render_resolution_valid);
 
-  // Default is the interactive picker.
+  // Default is native (no startup dialog).
   const std::filesystem::path empty = temporary.Write(R"yaml(
 version: 1
 )yaml");
   loaded = LoadRuntimeConfig(MapEnvironment(), empty);
   ASSERT_TRUE(loaded) << loaded.error;
-  EXPECT_EQ(loaded.config.window().render_resolution, "ask");
+  EXPECT_EQ(loaded.config.window().render_resolution, "native");
+  EXPECT_EQ(loaded.config.window().render_scale, 1.0);
+  EXPECT_TRUE(loaded.config.window().render_scale_valid);
+  EXPECT_FALSE(loaded.config.window().fxaa);
+}
+
+TEST(RuntimeConfigFileTest, ValidatesAndLoadsRenderScaleAndFxaa) {
+  TemporaryDirectory temporary;
+  const std::filesystem::path invalid = temporary.Write(R"yaml(
+version: 1
+window:
+  render_scale: 2.0
+)yaml");
+  RuntimeConfigLoadResult loaded = LoadRuntimeConfig(MapEnvironment(), invalid);
+  EXPECT_FALSE(loaded);
+  EXPECT_NE(loaded.error.find("window.render_scale"), std::string::npos);
+
+  const std::filesystem::path valid = temporary.Write(R"yaml(
+version: 1
+window:
+  render_resolution: 720p
+  render_scale: 0.5
+  fxaa: true
+)yaml");
+  loaded = LoadRuntimeConfig(MapEnvironment(), valid);
+  ASSERT_TRUE(loaded) << loaded.error;
+  EXPECT_EQ(loaded.config.window().render_resolution, "720p");
+  EXPECT_DOUBLE_EQ(loaded.config.window().render_scale, 0.5);
+  EXPECT_TRUE(loaded.config.window().render_scale_valid);
+  EXPECT_TRUE(loaded.config.window().fxaa);
+
+  // Exported to the environment for the legacy runtime.
+  std::string error;
+  ASSERT_TRUE(ExportRuntimeConfigEnvironment(loaded.config, &error)) << error;
+  ASSERT_NE(getenv("MOCKTAIL_RENDER_SCALE"), nullptr);
+  EXPECT_STREQ(getenv("MOCKTAIL_RENDER_SCALE"), "0.500000");
+  ASSERT_NE(getenv("MOCKTAIL_FXAA"), nullptr);
+  EXPECT_STREQ(getenv("MOCKTAIL_FXAA"), "1");
+  unsetenv("MOCKTAIL_RENDER_SCALE");
+  unsetenv("MOCKTAIL_FXAA");
 }
 
 TEST(RuntimeConfigFileTest, ExportsAudioOutputDevice) {
