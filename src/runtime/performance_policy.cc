@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <fstream>
 #include <limits>
 #include <nlohmann/json.hpp>
@@ -428,24 +429,32 @@ bool MergeRuntimeClientSettingsOverrides(const FrameRatePolicy& frame_rate,
                                                  merged_json, error);
 }
 
-bool MergeFxaaClientSettingsOverrides(bool enabled,
-                                      std::string_view base_json,
-                                      std::string* merged_json,
-                                      std::string* error) {
+bool MergeRenderQualityClientSettingsOverrides(bool fxaa, double render_scale,
+                                               std::string_view base_json,
+                                               std::string* merged_json,
+                                               std::string* error) {
   if (merged_json == nullptr)
     return false;
   auto overrides = nlohmann::json::parse(base_json.empty() ? "{}" : base_json,
                                          nullptr, false, true);
   if (overrides.is_discarded() || !overrides.is_object()) {
     if (error)
-      *error = "FXAA overrides must be a JSON object";
+      *error = "render-quality overrides must be a JSON object";
     return false;
   }
-  if (enabled) {
+  if (fxaa) {
     // Roblox has no dedicated FXAA toggle flag: FXAA runs as a post-fx pass
     // when MSAA is off. Keep post-processing enabled and force MSAA off.
     overrides["FFlagDisablePostFx"] = "False";
     overrides["FIntDebugForceMSAASamples"] = "0";
+  }
+  if (render_scale > 0.0 && render_scale < 1.0) {
+    // DRS target: hundredths of a percent of the window surface. This is
+    // what actually lowers the 3D render resolution; the frame is upscaled
+    // back to the surface at present (post-fx pass when fxaa is on).
+    const long long percent =
+        std::llround(render_scale * 10000.0);
+    overrides["FIntAutomaticDRSHundredthPercent"] = std::to_string(percent);
   }
   *merged_json = overrides.dump();
   return true;
