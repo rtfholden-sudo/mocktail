@@ -2195,6 +2195,23 @@ void ApplyAuthStartupDefaults(bool credential_available,
   }
 }
 
+// Roblox endpoint overrides are a credential-theft vector: if the client
+// base/API/cookie URLs or the cookie domain were read from the environment, a
+// wrapper script or tampered config could point the authenticated session
+// (including the .ROBLOSECURITY cookie) at an arbitrary host. Pin every one
+// of them to its roblox.com value and loudly ignore any override attempt.
+void IgnoreRobloxEndpointOverride(const char* override_name,
+                                  std::string_view pinned_value) {
+  const char* value = std::getenv(override_name);
+  if (value != nullptr && *value != '\0' &&
+      std::string_view(value) != pinned_value) {
+    std::cerr << "  [engine] WARNING: ignoring " << override_name
+              << " override; Roblox endpoints are pinned to " << pinned_value
+              << '\n'
+              << std::flush;
+  }
+}
+
 std::string ResolveClientSettingsJson() {
   mocktail::services::ClientSettingsOptions options;
   options.explicit_json =
@@ -2208,7 +2225,11 @@ std::string ResolveClientSettingsJson() {
       !IsDisabled("MOCKTAIL_CLIENT_SETTINGS_AUTO_UPDATE");
   options.application =
       GetEnvString("MOCKTAIL_CLIENT_SETTINGS_APP", "GoogleAndroidApp");
-  options.url = GetEnvString("MOCKTAIL_CLIENT_SETTINGS_URL", "");
+  // Pinned: client settings must come from clientsettingscdn.roblox.com.
+  IgnoreRobloxEndpointOverride(
+      "MOCKTAIL_CLIENT_SETTINGS_URL",
+      "https://clientsettingscdn.roblox.com/v2/settings/application/");
+  options.url = "";
   options.cache_file = GetEnvString(
       "MOCKTAIL_CLIENT_SETTINGS_CACHE_FILE",
       (MocktailCacheRoot() + "/clientsettings/" + options.application +
@@ -2926,10 +2947,12 @@ void ConfigureNativeSettings(JNIEnv* env, jclass settings_class,
   std::string default_policy_file = GetEnvString(
       "MOCKTAIL_DEFAULT_APP_POLICY_FILE",
       "content/guac/defaultConfigs/GuacDefaultPolicy-GlobalDist.json");
-  std::string base_url =
-      GetEnvString("MOCKTAIL_BASE_URL", "https://www.roblox.com/");
-  std::string api_url =
-      GetEnvString("MOCKTAIL_API_URL", "https://api.roblox.com/");
+  // Pinned to roblox.com: env overrides here could redirect authenticated
+  // traffic (and the session cookie) to an arbitrary host.
+  const std::string base_url = "https://www.roblox.com/";
+  IgnoreRobloxEndpointOverride("MOCKTAIL_BASE_URL", base_url);
+  const std::string api_url = "https://api.roblox.com/";
+  IgnoreRobloxEndpointOverride("MOCKTAIL_API_URL", api_url);
   std::string roblox_channel =
       GetEnvString("MOCKTAIL_ROBLOX_CHANNEL", "production");
   std::string channel_platform_name =
@@ -2943,10 +2966,13 @@ void ConfigureNativeSettings(JNIEnv* env, jclass settings_class,
       GetEnvString("MOCKTAIL_HTTP_PROXY_HOST", "");
   jlong http_proxy_port =
       static_cast<jlong>(GetEnvInt("MOCKTAIL_HTTP_PROXY_PORT", 0));
-  std::string cookie_base_url =
-      GetEnvString("MOCKTAIL_COOKIE_BASE_URL", "https://www.roblox.com/");
-  std::string cookie_domain =
-      GetEnvString("MOCKTAIL_COOKIE_DOMAIN", "roblox.com");
+  // Pinned: the .ROBLOSECURITY cookie must only ever be scoped to and sent
+  // to roblox.com. An env override of the cookie domain/base URL would hand
+  // the session credential to any host named there.
+  const std::string cookie_base_url = "https://www.roblox.com/";
+  IgnoreRobloxEndpointOverride("MOCKTAIL_COOKIE_BASE_URL", cookie_base_url);
+  const std::string cookie_domain = "roblox.com";
+  IgnoreRobloxEndpointOverride("MOCKTAIL_COOKIE_DOMAIN", cookie_domain);
   const mocktail::runtime::SecureRobloxCredential* credential =
       context->roblox_credential;
   const std::string_view roblox_cookies =
@@ -4800,48 +4826,77 @@ int mocktail::legacy::Run(const runtime::CommandLineOptions& options,
         sdl_window != nullptr ? SDL_GetDisplayForWindow(sdl_window) : 0;
     const SDL_DisplayMode* mode =
         display != 0 ? SDL_GetCurrentDisplayMode(display) : nullptr;
+    // Fall back to the configured window size when the host display mode
+    // cannot be queried; the picker must still run in that case.
+    mocktail::runtime::DisplaySize native_display{runtime_config.window().width,
+                                                  runtime_config.window().height};
     if (mode != nullptr && mode->w > 0 && mode->h > 0) {
       // SDL mode dimensions need pixel_density to become physical pixels.
       const float density = mode->pixel_density > 0.0f ? mode->pixel_density
                                                        : 1.0f;
-      const mocktail::runtime::DisplaySize native_display{
+      native_display = {
           static_cast<std::int32_t>(std::lround(mode->w * density)),
           static_cast<std::int32_t>(std::lround(mode->h * density))};
-      // The render resolution reported to the Roblox client can be chosen
-      // independently of the window size: the window keeps its configured
-      // size and the rendered frames are scaled to fit it.
-      mocktail::runtime::DisplaySize render_size = native_display;
-      mocktail::runtime::RenderResolution preset =
-          mocktail::runtime::RenderResolution::kAsk;
-      const std::string configured =
-          GetEnvString("MOCKTAIL_RENDER_RESOLUTION", "ask");
-      if (!mocktail::runtime::ParseRenderResolution(configured, &preset)) {
-        preset = mocktail::runtime::RenderResolution::kAsk;
-      }
-      if (preset == mocktail::runtime::RenderResolution::kAsk) {
-        if (window_initialised && !IsEnabled("MOCKTAIL_HEADLESS")) {
-          mocktail::runtime::DisplaySize chosen;
-          if (mocktail::window::PromptRenderResolutionChoice(native_display,
-                                                             &chosen)) {
-            render_size = chosen;
-          }
-        }
-      } else {
-        render_size =
-            mocktail::runtime::RenderResolutionSize(preset, native_display);
-      }
-      const std::string display_size =
-          std::to_string(render_size.width) + "x" +
-          std::to_string(render_size.height);
-      setenv(mocktail::runtime::kDisplaySizeEnvironment, display_size.c_str(),
-             1);
-      std::cout << "  [window] host display "
-                << std::to_string(native_display.width) + "x" +
-                       std::to_string(native_display.height)
-                << " pixels; render resolution " << display_size
-                << " (window size unchanged)\n"
+    } else {
+      std::cerr << "  [window] WARNING: host display mode unavailable; "
+                << "treating " << native_display.width << "x"
+                << native_display.height << " as native\n"
                 << std::flush;
     }
+    // The render resolution reported to the Roblox client can be chosen
+    // independently of the window size: the window keeps its configured
+    // size and the rendered frames are scaled to fit it.
+    mocktail::runtime::DisplaySize render_size = native_display;
+    mocktail::runtime::RenderResolution preset =
+        mocktail::runtime::RenderResolution::kAsk;
+    const std::string configured =
+        GetEnvString("MOCKTAIL_RENDER_RESOLUTION", "ask");
+    if (!mocktail::runtime::ParseRenderResolution(configured, &preset)) {
+      std::cerr << "  [window] WARNING: invalid MOCKTAIL_RENDER_RESOLUTION='"
+                << configured << "'; falling back to ask\n"
+                << std::flush;
+      preset = mocktail::runtime::RenderResolution::kAsk;
+    }
+    std::cout << "  [window] render resolution mode: "
+              << mocktail::runtime::RenderResolutionName(preset) << "\n"
+              << std::flush;
+    if (preset == mocktail::runtime::RenderResolution::kAsk) {
+      if (IsEnabled("MOCKTAIL_HEADLESS")) {
+        std::cout << "  [window] render-resolution picker skipped "
+                     "(headless mode)\n"
+                  << std::flush;
+      } else {
+        mocktail::runtime::DisplaySize chosen;
+        if (mocktail::window::PromptRenderResolutionChoice(native_display,
+                                                           &chosen)) {
+          render_size = chosen;
+          std::cout << "  [window] render-resolution picker: chose "
+                    << chosen.width << "x" << chosen.height << "\n"
+                    << std::flush;
+        } else {
+          std::cout << "  [window] render-resolution picker closed or "
+                       "unavailable; using native "
+                    << native_display.width << "x" << native_display.height
+                    << "\n"
+                    << std::flush;
+        }
+      }
+    } else {
+      render_size =
+          mocktail::runtime::RenderResolutionSize(preset, native_display);
+    }
+    const std::string display_size = std::to_string(render_size.width) + "x" +
+                                     std::to_string(render_size.height);
+    setenv(mocktail::runtime::kDisplaySizeEnvironment, display_size.c_str(), 1);
+    std::cout << "  [window] host display "
+              << std::to_string(native_display.width) + "x" +
+                     std::to_string(native_display.height)
+              << " pixels; render resolution " << display_size
+              << " (window size unchanged)\n"
+              << std::flush;
+  } else {
+    std::cerr << "  [window] render-resolution picker skipped (no window)\n"
+              << std::flush;
   }
   if (window_initialised) {
     const mocktail::window::WindowViewportSnapshot viewport =

@@ -1568,7 +1568,7 @@ bool PromptRenderResolutionChoice(const runtime::DisplaySize& native_display,
       {0, kButton720p, label_720p.c_str()},
       {0, kButton1080p, label_1080p.c_str()},
   };
-  const SDL_MessageBoxData data = {
+  SDL_MessageBoxData data = {
       0,
       g_state.sdl_window,
       "Mocktail render resolution",
@@ -1580,9 +1580,16 @@ bool PromptRenderResolutionChoice(const runtime::DisplaySize& native_display,
   };
   int button_id = 0;
   if (!SDL_ShowMessageBox(&data, &button_id)) {
-    std::fprintf(stderr, "  [window] render-resolution dialog failed: %s\n",
-                 SDL_GetError());
-    return false;
+    const char* first_error = SDL_GetError();
+    // Some compositors refuse modal dialogs parented to another window;
+    // retry once without a parent before giving up.
+    data.window = nullptr;
+    if (!SDL_ShowMessageBox(&data, &button_id)) {
+      std::fprintf(stderr,
+                   "  [window] render-resolution dialog failed: %s\n",
+                   first_error);
+      return false;
+    }
   }
   switch (button_id) {
     case kButton720p:
