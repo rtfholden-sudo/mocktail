@@ -1137,6 +1137,12 @@ add_test(
           ${CMAKE_SOURCE_DIR}
 )
 
+add_test(
+  NAME RobloxEndpointPinningTest.EndpointsAreNotEnvOverridable
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/roblox_endpoint_pinning_test.sh
+          ${CMAKE_SOURCE_DIR}
+)
+
 find_program(MOCKTAIL_PATCHELF_EXECUTABLE patchelf)
 add_test(
   NAME StandaloneWebkitCacheTest.RelocatesAllLoaderNames
