@@ -377,22 +377,31 @@ TEST(PerformancePolicyTest, RejectsConflictingOrMalformedOverrides) {
             std::string::npos);
 }
 
-TEST(PerformancePolicyTest, FxaaOverrideKeepsPostFxOnAndMsaaOff) {
+TEST(PerformancePolicyTest, RenderQualityOverridesFxaaAndDrSScale) {
   std::string merged;
   std::string error;
-  ASSERT_TRUE(MergeFxaaClientSettingsOverrides(
-      true, R"({"unrelated":123})", &merged, &error));
+  // fxaa on + render_scale 0.5: post-fx stays on, MSAA off, DRS at 50%.
+  ASSERT_TRUE(MergeRenderQualityClientSettingsOverrides(
+      true, 0.5, R"({"unrelated":123})", &merged, &error));
   const auto parsed = nlohmann::json::parse(merged);
   EXPECT_EQ(parsed.at("FFlagDisablePostFx"), "False");
   EXPECT_EQ(parsed.at("FIntDebugForceMSAASamples"), "0");
+  EXPECT_EQ(parsed.at("FIntAutomaticDRSHundredthPercent"), "5000");
   EXPECT_EQ(parsed.at("unrelated"), 123);
-  // Disabled: base overrides pass through untouched.
-  ASSERT_TRUE(MergeFxaaClientSettingsOverrides(
-      false, R"({"FFlagDisablePostFx":"True"})", &merged, &error));
+  // Defaults (fxaa off, scale 1.0): base overrides pass through untouched.
+  ASSERT_TRUE(MergeRenderQualityClientSettingsOverrides(
+      false, 1.0, R"({"FFlagDisablePostFx":"True"})", &merged, &error));
   const auto off = nlohmann::json::parse(merged);
   EXPECT_EQ(off.at("FFlagDisablePostFx"), "True");
   EXPECT_FALSE(off.contains("FIntDebugForceMSAASamples"));
-  EXPECT_FALSE(MergeFxaaClientSettingsOverrides(true, "[]", &merged, &error));
+  EXPECT_FALSE(off.contains("FIntAutomaticDRSHundredthPercent"));
+  // Scale 0.25 clamps to the documented floor percent.
+  ASSERT_TRUE(MergeRenderQualityClientSettingsOverrides(
+      false, 0.25, "{}", &merged, &error));
+  EXPECT_EQ(nlohmann::json::parse(merged).at("FIntAutomaticDRSHundredthPercent"),
+            "2500");
+  EXPECT_FALSE(MergeRenderQualityClientSettingsOverrides(
+      true, 0.5, "[]", &merged, &error));
 }
 
 TEST(PerformancePolicyTest, HostAudioMenuUsesBridgedDeviceQueries) {
