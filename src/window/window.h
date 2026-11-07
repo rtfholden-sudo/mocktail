@@ -6,7 +6,6 @@
 
 #include "mocktail/platform/display_refresh_capabilities.h"
 #include "mocktail/status.h"
-#include "runtime/display_size.h"
 #include "window/platform_event_observer.h"
 #include "window/present_observer.h"
 #include "window/window_pointer_capture_owner.h"
@@ -108,13 +107,6 @@ void* GetNativeWindow();
 
 // Host-only SDL_Window handle for Vulkan WSI.
 void* GetBackendWindow();
-
-// Shows a startup picker for the render resolution (720p / 1080p / native).
-// The SDL window keeps its size; only the resolution reported to the Roblox
-// client changes. Returns false (and leaves *chosen as native) when there is
-// no window, the dialog fails, or the user cancels.
-bool PromptRenderResolutionChoice(const runtime::DisplaySize& native_display,
-                                  runtime::DisplaySize* chosen);
 
 bool UsesDirectVulkan();
 

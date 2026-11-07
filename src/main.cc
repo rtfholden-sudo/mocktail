@@ -856,10 +856,18 @@ int main(int argc, char* argv[]) {
                 << command_line_error << '\n';
       return EXIT_FAILURE;
     }
+    std::string fxaa_overrides;
+    if (!mocktail::runtime::MergeFxaaClientSettingsOverrides(
+            runtime_config.config.window().fxaa, client_settings_overrides,
+            &fxaa_overrides, &command_line_error)) {
+      std::cerr << "[FATAL] Cannot apply FXAA client-settings policy: "
+                << command_line_error << '\n';
+      return EXIT_FAILURE;
+    }
     std::string audio_capture_overrides;
     if (!mocktail::runtime::MergeAudioCaptureClientSettingsOverrides(
             runtime_config.config.microphone_enabled(),
-            client_settings_overrides, &audio_capture_overrides,
+            fxaa_overrides, &audio_capture_overrides,
             &command_line_error)) {
       std::cerr << "[FATAL] Cannot apply microphone permission policy: "
                 << command_line_error << '\n';

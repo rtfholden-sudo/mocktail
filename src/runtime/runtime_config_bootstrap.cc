@@ -18,6 +18,8 @@ namespace {
 constexpr std::string_view kDefaultRuntimeConfig =
     R"yaml(# Mocktail configuration.
 # The file is created once with mode 0600. Mocktail never replaces your edits.
+# Location: $XDG_CONFIG_HOME/mocktail/config.yaml — inside the Flatpak that is
+# ~/.var/app/space.bigrat.mocktail/config/mocktail/config.yaml
 
 # Integer: configuration schema version. Only version 1 is supported.
 version: 1
@@ -155,13 +157,20 @@ window:
   # Boolean (default: false): render at physical display-pixel density instead
   # of the logical desktop resolution. Enable only for sharper high-DPI output.
   high_dpi: false
-  # String (default: ask): resolution Roblox renders at. The window keeps its
-  # configured width/height and the rendered image is scaled to fit it, so a
-  # lower render resolution is a cheap FPS win on weak GPUs (e.g. Iris Xe).
-  # `ask` shows a startup picker (720p / 1080p / native) in windowed mode;
-  # `native` uses the host display resolution. Supported: ask, native, 720p,
-  # 1080p.
-  # render_resolution: ask
+  # String (default: native): resolution Roblox renders at. The window keeps
+  # its configured width/height and the rendered image is scaled to fit it, so
+  # a lower render resolution is a cheap FPS win on weak GPUs (e.g. Iris Xe).
+  # `native` uses the host display resolution. Supported: native, 720p, 1080p
+  # (`ask` is accepted as an alias of native; no startup dialog is shown).
+  # render_resolution: native
+  # Number (default: 1.0): extra render-resolution scale applied on top of
+  # render_resolution, between 0.25 and 1.0. 0.5 renders at half the chosen
+  # resolution (e.g. 640x360 for 720p) and the window upscales the frames;
+  # pair with fxaa: true to soften the upscale.
+  # render_scale: 1.0
+  # Boolean (default: false): enable Roblox's FXAA post-process (MSAA off,
+  # post-processing on). Recommended together with render_scale < 1.
+  # fxaa: false
 
 network:
   # Boolean (default: false): follow the host HTTP/SOCKS5 proxy and

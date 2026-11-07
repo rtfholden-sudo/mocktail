@@ -53,6 +53,43 @@ TEST(RenderResolutionTest, NamesRoundTrip) {
   }
 }
 
+TEST(RenderResolutionTest, ParsesRenderScale) {
+  double scale = 0.0;
+  EXPECT_TRUE(ParseRenderScale("1.0", &scale));
+  EXPECT_DOUBLE_EQ(scale, 1.0);
+  EXPECT_TRUE(ParseRenderScale("0.5", &scale));
+  EXPECT_DOUBLE_EQ(scale, 0.5);
+  EXPECT_TRUE(ParseRenderScale("0.25", &scale));
+  EXPECT_DOUBLE_EQ(scale, 0.25);
+  // Empty means no extra scaling.
+  EXPECT_TRUE(ParseRenderScale("", &scale));
+  EXPECT_DOUBLE_EQ(scale, 1.0);
+  EXPECT_TRUE(ParseRenderScale("0.5", nullptr));
+  EXPECT_FALSE(ParseRenderScale("0.1", &scale));
+  EXPECT_FALSE(ParseRenderScale("1.5", &scale));
+  EXPECT_FALSE(ParseRenderScale("half", &scale));
+  EXPECT_FALSE(ParseRenderScale("0.5x", &scale));
+}
+
+TEST(RenderResolutionTest, ApplyRenderScaleClampsAndKeepsMinimum) {
+  const DisplaySize size{1280, 720};
+  const DisplaySize half = ApplyRenderScale(size, 0.5);
+  EXPECT_EQ(half.width, 640);
+  EXPECT_EQ(half.height, 360);
+  const DisplaySize full = ApplyRenderScale(size, 1.0);
+  EXPECT_EQ(full.width, 1280);
+  EXPECT_EQ(full.height, 720);
+  // Out-of-range scales are clamped; tiny results keep a 320x180 floor.
+  const DisplaySize clamped = ApplyRenderScale(size, 5.0);
+  EXPECT_EQ(clamped.width, 1280);
+  const DisplaySize floored = ApplyRenderScale({640, 360}, 0.25);
+  EXPECT_EQ(floored.width, 320);
+  EXPECT_GE(floored.height, 180);
+  const DisplaySize tiny = ApplyRenderScale({400, 200}, 0.1);
+  EXPECT_EQ(tiny.width, 320);
+  EXPECT_EQ(tiny.height, 180);
+}
+
 TEST(RenderResolutionTest, PresetSizesKeepWindowIndependent) {
   const DisplaySize native{2560, 1440};
   // Fixed presets ignore the native display size; ask/native keep it.

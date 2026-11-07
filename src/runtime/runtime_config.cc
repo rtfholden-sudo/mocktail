@@ -226,6 +226,22 @@ RuntimeConfig RuntimeConfig::FromEnvironment(const Environment& environment) {
                         config.window_.render_resolution);
   config.window_.render_resolution_valid =
       ParseRenderResolution(config.window_.render_resolution, nullptr);
+  {
+    const std::optional<std::string> scale =
+        environment.Get("MOCKTAIL_RENDER_SCALE");
+    if (scale.has_value()) {
+      double parsed = 1.0;
+      if (ParseRenderScale(*scale, &parsed)) {
+        config.window_.render_scale = parsed;
+      } else {
+        config.window_.render_scale_valid = false;
+      }
+    }
+  }
+  bool fxaa_valid = true;
+  config.window_.fxaa =
+      ReadBoolean(environment, "MOCKTAIL_FXAA", config.window_.fxaa,
+                  &fxaa_valid);
   config.theme_mode_ =
       environment.GetOr("MOCKTAIL_THEME", config.theme_mode_);
   const std::optional<std::string> configured_device =

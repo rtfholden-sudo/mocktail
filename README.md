@@ -125,7 +125,10 @@ Direct AppImage, DEB, and RPM downloads are available from the
 ## FFlag overrides
 
 Put a JSON object in `$XDG_CONFIG_HOME/mocktail/fflags.json` (usually
-`~/.config/mocktail/fflags.json`). Mocktail applies it on the next launch.
+`~/.config/mocktail/fflags.json`; inside the Flatpak
+`~/.var/app/space.bigrat.mocktail/config/mocktail/fflags.json`). Mocktail
+applies it on the next launch. The main YAML config lives next to it as
+`config.yaml`.
 
 PC profiles use the legacy Charts page by default to avoid the blank screen
 caused by `Color3` errors in the newer SDUI page. An explicit
@@ -171,12 +174,16 @@ Mocktail detects the host CPU and GPU at startup and records them in
 - **Frame rate on fixed-refresh panels.** `graphics.frame_rate_limit: display`
   caps to the detected refresh rate; `unlimited` with `graphics.vsync: off`
   removes the cap (see `make run-unlimited`).
-- **Render resolution vs. window size.** `window.render_resolution` controls the
-  resolution Roblox renders at — `ask` (default) shows a startup picker with
-  720p / 1080p / native, `native` uses the host display, `720p`/`1080p` are
-  fixed. The SDL window keeps its configured `window.width`/`window.height` and
-  the rendered image is scaled to fit, so dropping to 720p on an Iris Xe iGPU is
-  a cheap FPS win without shrinking the window.
+- **Render resolution vs. window size (YAML only, no popup).** In
+  `config.yaml` (`$XDG_CONFIG_HOME/mocktail/config.yaml`, inside the Flatpak
+  `~/.var/app/space.bigrat.mocktail/config/mocktail/config.yaml`):
+  `window.render_resolution` picks `native` (default, host display), `720p`, or
+  `1080p`; `window.render_scale` (0.25–1.0, default 1.0) scales that down
+  further (e.g. `render_resolution: 720p` + `render_scale: 0.5` renders at
+  640x360); `window.fxaa: true` turns on Roblox's FXAA post-process to soften
+  the upscale. The SDL window keeps its configured `window.width`/`window.height`
+  and the rendered image is scaled to fit, so a lower render resolution is a
+  cheap FPS win on an Iris Xe iGPU without shrinking the window.
 
 ## Privacy: telemetry is disabled
 

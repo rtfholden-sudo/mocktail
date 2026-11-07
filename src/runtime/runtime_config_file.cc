@@ -186,6 +186,8 @@ bool ValidateAndMap(const ValueMap& yaml, ValueMap* environment,
        "window.title",
        "window.high_dpi",
        "window.render_resolution",
+       "window.render_scale",
+       "window.fxaa",
        "input.touch_enabled",
       "compatibility.desktop_playability",
       "network.use_system_proxy",
@@ -454,11 +456,28 @@ bool ValidateAndMap(const ValueMap& yaml, ValueMap* environment,
     RenderResolution parsed = RenderResolution::kAsk;
     if (!ParseRenderResolution(*render_resolution, &parsed)) {
       *error =
-          "window.render_resolution must be ask, native, 720p, or 1080p";
+          "window.render_resolution must be native, 720p, or 1080p";
       return false;
     }
     (*environment)["MOCKTAIL_RENDER_RESOLUTION"] =
         std::string(RenderResolutionName(parsed));
+  }
+  if (const auto render_scale = value("window.render_scale");
+      render_scale.has_value()) {
+    double parsed = 1.0;
+    if (!ParseRenderScale(*render_scale, &parsed)) {
+      *error = "window.render_scale must be a number between 0.25 and 1.0";
+      return false;
+    }
+    (*environment)["MOCKTAIL_RENDER_SCALE"] = *render_scale;
+  }
+  if (const auto fxaa = value("window.fxaa"); fxaa.has_value()) {
+    bool parsed = false;
+    if (!ParseBoolean(*fxaa, &parsed)) {
+      *error = "window.fxaa must be true or false";
+      return false;
+    }
+    (*environment)["MOCKTAIL_FXAA"] = parsed ? "1" : "0";
   }
   if (const auto touch = value("input.touch_enabled"); touch.has_value()) {
     bool parsed = false;
@@ -829,7 +848,9 @@ RuntimeConfigLoadResult LoadRuntimeConfig(
   } else if (!result.config.discord_rpc_valid()) {
     result.error = "Discord Rich Presence configuration is invalid";
   } else if (!result.config.window().render_resolution_valid) {
-    result.error = "render resolution must be ask, native, 720p, or 1080p";
+    result.error = "render resolution must be native, 720p, or 1080p";
+  } else if (!result.config.window().render_scale_valid) {
+    result.error = "render scale must be a number between 0.25 and 1.0";
   }
   return result;
 }
@@ -904,6 +925,12 @@ bool ExportRuntimeConfigEnvironment(const RuntimeConfig& config,
     }
     return false;
   }
+  if (!config.window().render_scale_valid) {
+    if (error != nullptr) {
+      *error = "cannot export an invalid render scale";
+    }
+    return false;
+  }
   const DeviceProfile& device = config.device_profile();
   const bool base_exported =
       SetEnvironmentValue("MOCKTAIL_HEADLESS", config.headless() ? "1" : "0",
@@ -943,6 +970,10 @@ bool ExportRuntimeConfigEnvironment(const RuntimeConfig& config,
                           config.window().high_dpi ? "1" : "0", error) &&
       SetEnvironmentValue("MOCKTAIL_RENDER_RESOLUTION",
                           config.window().render_resolution, error) &&
+      SetEnvironmentValue("MOCKTAIL_RENDER_SCALE",
+                          std::to_string(config.window().render_scale), error) &&
+      SetEnvironmentValue("MOCKTAIL_FXAA", config.window().fxaa ? "1" : "0",
+                          error) &&
       SetEnvironmentValue(
           "MOCKTAIL_TOUCH_MODE",
           config.input_capabilities().touch_enabled ? "on" : "off", error) &&

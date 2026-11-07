@@ -33,10 +33,17 @@ struct WindowConfig {
   // that size unless the user explicitly requests high-density rendering.
   bool high_dpi = false;
   bool high_dpi_valid = true;
-  // Render resolution reported to the Roblox client: ask, native, 720p, 1080p.
+  // Render resolution reported to the Roblox client: native, 720p, 1080p
+  // ("ask" is accepted as an alias of native; no startup dialog is shown).
   // The window keeps its configured size; frames are scaled to fit it.
-  std::string render_resolution = "ask";
+  std::string render_resolution = "native";
   bool render_resolution_valid = true;
+  // Additional render-resolution scale (0.25-1.0) applied on top of
+  // render_resolution, e.g. 0.5 renders at half the chosen resolution.
+  double render_scale = 1.0;
+  bool render_scale_valid = true;
+  // Enable Roblox's FXAA post-process (useful with render_scale < 1).
+  bool fxaa = false;
 };
 
 struct InputCapabilityConfig {
