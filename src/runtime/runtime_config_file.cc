@@ -1,5 +1,7 @@
 #include "runtime/runtime_config_file.h"
 
+#include "runtime/domain_allowlist.h"
+
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -192,6 +194,7 @@ bool ValidateAndMap(const ValueMap& yaml, ValueMap* environment,
        "input.touch_enabled",
       "compatibility.desktop_playability",
       "network.use_system_proxy",
+      "network.allowed_domains",
       "network.proxy_host",
       "network.proxy_port",
       "network.proxy_scheme",
@@ -521,6 +524,16 @@ bool ValidateAndMap(const ValueMap& yaml, ValueMap* environment,
     (*environment)["MOCKTAIL_USE_SYSTEM_PROXY"] =
         use_system_proxy ? "1" : "0";
   }
+  if (const auto allowed_domains = value("network.allowed_domains");
+      allowed_domains.has_value()) {
+    if (!IsValidDomainAllowlist(*allowed_domains)) {
+      *error = "network.allowed_domains must be a comma-separated list of "
+               "domains (e.g. \"roblox.com,google.com\")";
+      return false;
+    }
+    (*environment)["MOCKTAIL_ALLOWED_DOMAINS"] =
+        JoinDomainAllowlist(ParseDomainAllowlist(*allowed_domains));
+  }
   if (proxy_host.has_value() != proxy_port.has_value() ||
       (proxy_scheme.has_value() && !proxy_host.has_value())) {
     *error =
@@ -839,6 +852,8 @@ RuntimeConfigLoadResult LoadRuntimeConfig(
     result.error = "theme mode is invalid";
   } else if (!result.config.window().high_dpi_valid) {
     result.error = "window high-DPI policy is invalid";
+  } else if (!result.config.allowed_domains_valid()) {
+    result.error = "network.allowed_domains is invalid";
   } else if (result.config.vsync_mode() != "auto" &&
              result.config.vsync_mode() != "on" &&
              result.config.vsync_mode() != "off") {
@@ -947,6 +962,12 @@ bool ExportRuntimeConfigEnvironment(const RuntimeConfig& config,
     }
     return false;
   }
+  if (!config.allowed_domains_valid()) {
+    if (error != nullptr) {
+      *error = "cannot export an invalid domain allowlist";
+    }
+    return false;
+  }
   const DeviceProfile& device = config.device_profile();
   const bool base_exported =
       SetEnvironmentValue("MOCKTAIL_HEADLESS", config.headless() ? "1" : "0",
@@ -989,6 +1010,9 @@ bool ExportRuntimeConfigEnvironment(const RuntimeConfig& config,
       SetEnvironmentValue("MOCKTAIL_RENDER_SCALE",
                           std::to_string(config.window().render_scale), error) &&
       SetEnvironmentValue("MOCKTAIL_FXAA", config.window().fxaa ? "1" : "0",
+                          error) &&
+      SetEnvironmentValue("MOCKTAIL_ALLOWED_DOMAINS",
+                          JoinDomainAllowlist(config.allowed_domains()),
                           error) &&
       SetEnvironmentValue(
           "MOCKTAIL_TOUCH_MODE",

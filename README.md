@@ -147,6 +147,16 @@ this file only works for the handful of allowlisted flags. Mocktail's own
 YAML-driven policies (in `config.yaml`) are injected through the host
 channel instead.
 
+## Game network domain allowlist
+
+Set `network.allowed_domains` in `config.yaml` to a comma-separated list
+(e.g. `allowed_domains: "roblox.com,google.com,cloudflare.com,discord.com"`).
+While playing, the engine may then only resolve/connect to those domains
+and their subdomains; every other host is refused at DNS time
+(`EAI_NONAME`) and logged as `[dns] blocked host=... reason=domain-allowlist`
+in the session log. Empty (default) disables the restriction. Mocktail's
+own updater and client-settings downloads are unaffected.
+
 ## Universal disk logging
 
 Set `logs: true` at the top level of `config.yaml` to write **every** log

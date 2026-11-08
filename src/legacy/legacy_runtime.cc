@@ -60,6 +60,7 @@
 #include "linker/linker.h"
 #include "mocktail/graphics/bionic_egl_bridge.h"
 #include "runtime/device_memory_profile.h"
+#include "runtime/domain_allowlist.h"
 #include "runtime/display_size.h"
 #include "runtime/render_resolution.h"
 #include "runtime/environment.h"
@@ -1060,6 +1061,31 @@ BionicAddrInfo* BionicAddrInfoFromHost(const addrinfo* host) {
   return head;
 }
 
+// Game-side domain allowlist: when MOCKTAIL_ALLOWED_DOMAINS is non-empty,
+// the engine may only resolve these domains and their subdomains; every
+// other hostname is refused with EAI_NONAME before any DNS query leaves
+// the process. Mocktail's own updater/settings traffic uses the host
+// resolver directly and is unaffected.
+bool GameDomainAllowed(const char* host) {
+  const char* raw = std::getenv("MOCKTAIL_ALLOWED_DOMAINS");
+  if (raw == nullptr || raw[0] == '\0') {
+    return true;
+  }
+  const std::vector<std::string> allowed =
+      mocktail::runtime::ParseDomainAllowlist(raw);
+  if (allowed.empty()) {
+    return true;
+  }
+  return mocktail::runtime::DomainAllowed(host != nullptr ? host : "",
+                                          allowed);
+}
+
+void LogBlockedDomain(const char* api, const char* host) {
+  std::cout << "  [dns] blocked " << api << " host="
+            << (host != nullptr ? host : "(null)")
+            << " reason=domain-allowlist" << '\n';
+}
+
 extern "C" int mocktail_getaddrinfo(const char* node, const char* service,
                                     const BionicAddrInfo* hints,
                                     BionicAddrInfo** result) {
@@ -1067,6 +1093,10 @@ extern "C" int mocktail_getaddrinfo(const char* node, const char* service,
     return EAI_FAIL;
   }
   *result = nullptr;
+  if (node != nullptr && !GameDomainAllowed(node)) {
+    LogBlockedDomain("getaddrinfo", node);
+    return EAI_NONAME;
+  }
   addrinfo host_hints = HostHintsFromBionic(hints);
   addrinfo* host_result = nullptr;
   int rc = ::getaddrinfo(node, service, hints ? &host_hints : nullptr,
@@ -1099,6 +1129,11 @@ extern "C" void mocktail_freeaddrinfo(BionicAddrInfo* info) {
 }
 
 extern "C" hostent* mocktail_gethostbyname(const char* name) {
+  if (name != nullptr && !GameDomainAllowed(name)) {
+    LogBlockedDomain("gethostbyname", name);
+    h_errno = HOST_NOT_FOUND;
+    return nullptr;
+  }
   hostent* result = ::gethostbyname(name);
   if (DnsTraceEnabled()) {
     std::cout << "  [dns] gethostbyname name=" << (name ? name : "(null)")

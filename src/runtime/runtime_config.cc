@@ -1,5 +1,7 @@
 #include "runtime/runtime_config.h"
 
+#include "runtime/domain_allowlist.h"
+
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -346,6 +348,10 @@ RuntimeConfig RuntimeConfig::FromEnvironment(const Environment& environment) {
       IsValidDeviceProfileValue(config.audio_input_device_, 512);
   config.use_system_proxy_ =
       LegacyEnabled(environment, "MOCKTAIL_USE_SYSTEM_PROXY");
+  config.allowed_domains_ = ParseDomainAllowlist(
+      environment.GetOr("MOCKTAIL_ALLOWED_DOMAINS", ""));
+  config.allowed_domains_valid_ = IsValidDomainAllowlist(
+      environment.GetOr("MOCKTAIL_ALLOWED_DOMAINS", ""));
   config.network_proxy_ = ReadNetworkProxy(environment);
   config.fleasion_enabled_ = ReadBoolean(
       environment, "MOCKTAIL_FLEASION_ENABLED", false, &config.fleasion_valid_);
