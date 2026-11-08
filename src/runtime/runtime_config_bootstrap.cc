@@ -200,6 +200,10 @@ network:
   # reverse-resolved (PTR) via 8.8.8.8/8.8.4.4/1.1.1.1 and allowed only when
   # a PTR name passes this list and forward-verifies back to the IP; direct
   # connect() calls to public IPs are gated the same way ("[net] blocked").
+  # IPs returned when resolving an allowlisted hostname are trusted
+  # directly (recorded in the same cache), so CDN edge IPs whose PTR name
+  # is not under an allowed domain are not blocked; the PTR gate applies
+  # only to IPs that no allowlisted hostname ever resolved to.
   # Loopback/private/link-local ranges always pass. Raw-IP decisions are
   # cached on disk at $XDG_CACHE_HOME/mocktail/domain_allowlist_cache.json
   # (0600) for faster launches; the cache is discarded and overwritten
