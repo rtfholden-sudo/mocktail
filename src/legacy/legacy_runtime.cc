@@ -14,6 +14,7 @@
 #include <iostream>
 #include <csignal>
 #include <netdb.h>
+#include <netinet/in.h>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -1097,6 +1098,67 @@ void LogBlockedDomain(const char* api, const char* host) {
             << " reason=domain-allowlist" << '\n';
 }
 
+// When the engine resolves an ALLOWLISTED hostname, every IPv4 address it
+// returns is pre-authorized in the raw-IP cache, so the connect() wrapper
+// lets the connection through without a PTR round trip. CDN/fronting IPs
+// legitimately have non-roblox.com PTR records, so re-checking them by PTR
+// would wrongly block real Roblox traffic. The PTR gate still applies to
+// IPs that no allowed hostname ever resolved to (hard-coded raw IPs).
+void MarkResolvedAddressesAllowed(const char* host, const BionicAddrInfo* info) {
+  const char* raw = std::getenv("MOCKTAIL_ALLOWED_DOMAINS");
+  if (raw == nullptr || raw[0] == '\0' || host == nullptr || info == nullptr) {
+    return;
+  }
+  const std::vector<std::string> allowed =
+      mocktail::runtime::ParseDomainAllowlist(raw);
+  if (allowed.empty() ||
+      !mocktail::runtime::DomainAllowed(host, allowed)) {
+    return;
+  }
+  for (const BionicAddrInfo* current = info; current != nullptr;
+       current = current->ai_next) {
+    if (current->ai_family != AF_INET || current->ai_addr == nullptr ||
+        current->ai_addrlen < sizeof(struct sockaddr_in)) {
+      continue;
+    }
+    const auto* in =
+        reinterpret_cast<const struct sockaddr_in*>(current->ai_addr);
+    const std::uint32_t address = ::ntohl(in->sin_addr.s_addr);
+    bool cached = false;
+    if (!mocktail::runtime::GlobalRawIpDomainCache().Get(address, &cached)) {
+      mocktail::runtime::GlobalRawIpDomainCache().Put(address, true);
+    }
+  }
+}
+
+void MarkHostentAddressesAllowed(const char* host, const hostent* result) {
+  if (result == nullptr || result->h_addr_list == nullptr) {
+    return;
+  }
+  const char* raw = std::getenv("MOCKTAIL_ALLOWED_DOMAINS");
+  if (raw == nullptr || raw[0] == '\0' || host == nullptr) {
+    return;
+  }
+  const std::vector<std::string> allowed =
+      mocktail::runtime::ParseDomainAllowlist(raw);
+  if (allowed.empty() ||
+      !mocktail::runtime::DomainAllowed(host, allowed)) {
+    return;
+  }
+  for (char** address = result->h_addr_list; *address != nullptr; ++address) {
+    if (result->h_length != static_cast<int>(sizeof(std::uint32_t))) {
+      continue;
+    }
+    std::uint32_t decoded = 0;
+    std::memcpy(&decoded, *address, sizeof(decoded));
+    const std::uint32_t host_order = ::ntohl(decoded);
+    bool cached = false;
+    if (!mocktail::runtime::GlobalRawIpDomainCache().Get(host_order, &cached)) {
+      mocktail::runtime::GlobalRawIpDomainCache().Put(host_order, true);
+    }
+  }
+}
+
 extern "C" int mocktail_getaddrinfo(const char* node, const char* service,
                                     const BionicAddrInfo* hints,
                                     BionicAddrInfo** result) {
@@ -1126,7 +1188,11 @@ extern "C" int mocktail_getaddrinfo(const char* node, const char* service,
   }
   *result = BionicAddrInfoFromHost(host_result);
   ::freeaddrinfo(host_result);
-  return *result ? 0 : EAI_MEMORY;
+  if (*result != nullptr) {
+    MarkResolvedAddressesAllowed(node, *result);
+    return 0;
+  }
+  return EAI_MEMORY;
 }
 
 extern "C" void mocktail_freeaddrinfo(BionicAddrInfo* info) {
@@ -1149,6 +1215,9 @@ extern "C" hostent* mocktail_gethostbyname(const char* name) {
   if (DnsTraceEnabled()) {
     std::cout << "  [dns] gethostbyname name=" << (name ? name : "(null)")
               << " result=" << reinterpret_cast<void*>(result) << '\n';
+  }
+  if (result != nullptr) {
+    MarkHostentAddressesAllowed(name, result);
   }
   return result;
 }
