@@ -152,6 +152,7 @@ bool ValidateAndMap(const ValueMap& yaml, ValueMap* environment,
   };
   const std::unordered_set<std::string> supported = {
       "version",
+      "logs",
       "device",
       "device.__mapping",
       "device.type",
@@ -296,6 +297,14 @@ bool ValidateAndMap(const ValueMap& yaml, ValueMap* environment,
       }
       (*environment)[std::string(variable)] = parsed ? "on" : "off";
     }
+  }
+  if (const auto logs = value("logs"); logs.has_value()) {
+    bool parsed = false;
+    if (!ParseBoolean(*logs, &parsed)) {
+      *error = "logs must be true or false";
+      return false;
+    }
+    (*environment)["MOCKTAIL_LOGS"] = parsed ? "1" : "0";
   }
   if (const auto headless = value("runtime.headless"); headless.has_value()) {
     bool parsed = false;
@@ -741,6 +750,13 @@ bool LoadYaml(const std::filesystem::path& path, ValueMap* values, bool* loaded,
         } else {
           *error = "device must be a preset scalar or detailed mapping";
           valid = false;
+        }
+      } else if (key == "logs") {
+        if (value_node == nullptr || value_node->type != YAML_SCALAR_NODE) {
+          *error = "logs must be a scalar";
+          valid = false;
+        } else {
+          (*values)["logs"] = Scalar(value_node);
         }
       } else if (key == "runtime" || key == "appearance" || key == "auth" ||
                  key == "graphics" || key == "performance" ||

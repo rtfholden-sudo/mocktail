@@ -44,6 +44,15 @@ device: pc-windows-11
 #   mouse: false
 #   keyboard: false
 
+# Boolean (default: false): universal disk logging. When true, every log
+# type is written to disk under $XDG_STATE_HOME/mocktail/logs (inside the
+# Flatpak ~/.var/app/space.bigrat.mocktail/state/mocktail/logs): the session
+# log tees ALL process stdout/stderr (Mocktail, SDL, engine JNI/Android
+# logs) to logs/sessions/<timestamp>.log plus logs/latest.log, and every
+# trace channel is switched on (engine, JNI, window, GL/EGL, FPS, DNS,
+# asset, post-client-settings), so all of it lands in that same log.
+# logs: false
+
 runtime:
   # Boolean (default: false): start without a visible SDL window.
   headless: false
@@ -170,6 +179,10 @@ window:
   # window at present; pair with fxaa: true to soften the upscale. Unlike
   # render_resolution (which only changes the resolution the game is told
   # about), this lowers the real GPU workload - the lever to use on an iGPU.
+  # If your Roblox build ignores locally-set flags (2025-09-29 allowlist),
+  # lower window.width/window.height instead: that directly shrinks the
+  # real framebuffer. Set logs: true to check latest.log for whether the
+  # DRS flag was applied.
   # render_scale: 1.0
   # Boolean (default: false): enable Roblox's FXAA post-process (MSAA off,
   # post-processing on). Recommended together with render_scale < 1.
