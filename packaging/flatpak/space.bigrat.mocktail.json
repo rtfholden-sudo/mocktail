@@ -89,6 +89,9 @@
         {
           "type": "archive",
           "url": "https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz",
+          "mirror-urls": [
+            "https://downloads.sourceforge.net/project/json-for-modern-c.mirror/v3.12.0/json.tar.xz"
+          ],
           "sha256": "42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa"
         }
       ]
