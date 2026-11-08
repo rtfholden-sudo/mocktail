@@ -106,8 +106,12 @@ bool MergeRuntimeClientSettingsOverrides(const FrameRatePolicy& frame_rate,
 // resolution target (FIntAutomaticDRSHundredthPercent, hundredths of a
 // percent of the window surface) so the 3D scene renders smaller and is
 // upscaled at present. When both are at their defaults the base overrides
-// pass through unchanged.
+// pass through unchanged. `host_framebuffer_scale` must be true when the
+// host already clamps the Vulkan swapchain extent to render_scale (see
+// mocktail::graphics::HostFramebufferScaleActive): the engine flag is then
+// skipped so the scale is not applied twice.
 bool MergeRenderQualityClientSettingsOverrides(bool fxaa, double render_scale,
+                                               bool host_framebuffer_scale,
                                                std::string_view base_json,
                                                std::string* merged_json,
                                                std::string* error);

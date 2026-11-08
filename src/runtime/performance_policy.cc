@@ -430,6 +430,7 @@ bool MergeRuntimeClientSettingsOverrides(const FrameRatePolicy& frame_rate,
 }
 
 bool MergeRenderQualityClientSettingsOverrides(bool fxaa, double render_scale,
+                                               bool host_framebuffer_scale,
                                                std::string_view base_json,
                                                std::string* merged_json,
                                                std::string* error) {
@@ -448,10 +449,12 @@ bool MergeRenderQualityClientSettingsOverrides(bool fxaa, double render_scale,
     overrides["FFlagDisablePostFx"] = "False";
     overrides["FIntDebugForceMSAASamples"] = "0";
   }
-  if (render_scale > 0.0 && render_scale < 1.0) {
+  if (!host_framebuffer_scale && render_scale > 0.0 && render_scale < 1.0) {
     // DRS target: hundredths of a percent of the window surface. This is
     // what actually lowers the 3D render resolution; the frame is upscaled
-    // back to the surface at present (post-fx pass when fxaa is on).
+    // back to the surface at present (post-fx pass when fxaa is on). Skipped
+    // when the host already clamps the swapchain extent, otherwise the scale
+    // would apply twice.
     const long long percent =
         std::llround(render_scale * 10000.0);
     overrides["FIntAutomaticDRSHundredthPercent"] = std::to_string(percent);

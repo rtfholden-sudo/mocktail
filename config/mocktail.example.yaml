@@ -161,10 +161,13 @@ window:
   # window at present; pair with fxaa: true to soften the upscale. Unlike
   # render_resolution (which only changes the resolution the game is told
   # about), this lowers the real GPU workload - the lever to use on an iGPU.
-  # If your Roblox build ignores locally-set flags (2025-09-29 allowlist),
-  # lower window.width/window.height instead: that directly shrinks the
-  # real framebuffer. Set logs: true to check latest.log for whether the
-  # DRS flag was applied.
+  # On the direct-vulkan backend Mocktail clamps the Vulkan swapchain extent
+  # to this fraction itself (host-side, no engine flag needed), so it works
+  # even on Roblox builds that ignore locally-set flags (2025-09-29
+  # allowlist). On other backends the DRS flag (FIntAutomaticDRSHundredthPercent)
+  # is used instead and is ignored by allowlisted builds - then lower
+  # window.width/window.height instead: that directly shrinks the real
+  # framebuffer. Set logs: true to check latest.log for the applied scale.
   render_scale: 0.25
   # Boolean (default: false): enable Roblox's FXAA post-process (MSAA off,
   # post-processing on). Recommended together with render_scale < 1.

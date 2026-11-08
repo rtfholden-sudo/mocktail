@@ -902,9 +902,16 @@ int main(int argc, char* argv[]) {
       return EXIT_FAILURE;
     }
     std::string render_quality_overrides;
+    // On the direct Vulkan backend the host clamps the swapchain extent to
+    // render_scale itself (bionic Vulkan adapter), so the engine DRS flag is
+    // skipped to avoid applying the scale twice.
+    const bool host_framebuffer_scale =
+        runtime_config.config.graphics_backend() ==
+        mocktail::runtime::GraphicsBackend::kVulkan;
     if (!mocktail::runtime::MergeRenderQualityClientSettingsOverrides(
             runtime_config.config.window().fxaa,
             runtime_config.config.window().render_scale,
+            host_framebuffer_scale,
             client_settings_overrides, &render_quality_overrides,
             &command_line_error)) {
       std::cerr << "[FATAL] Cannot apply render-quality client-settings policy: "
