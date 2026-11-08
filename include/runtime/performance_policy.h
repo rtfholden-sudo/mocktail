@@ -100,14 +100,17 @@ bool MergeRuntimeClientSettingsOverrides(const FrameRatePolicy& frame_rate,
 // Keeps the legacy test bypass disabled. The host PermissionsProtocol now
 // answers microphone authorization from capture configuration. No permission
 // query opens a recording device.
-// window.fxaa: when enabled, keeps Roblox's post-fx pipeline on with MSAA
-// off, which is the configuration that applies FXAA after rendering (useful
-// together with window.render_scale < 1). When disabled the base overrides
+// window.fxaa / window.render_scale: fxaa keeps Roblox's post-fx pipeline on
+// with MSAA off (the configuration that applies FXAA after rendering, useful
+// to soften an upscaled frame); render_scale < 1 sets the engine's dynamic
+// resolution target (FIntAutomaticDRSHundredthPercent, hundredths of a
+// percent of the window surface) so the 3D scene renders smaller and is
+// upscaled at present. When both are at their defaults the base overrides
 // pass through unchanged.
-bool MergeFxaaClientSettingsOverrides(bool enabled,
-                                      std::string_view base_json,
-                                      std::string* merged_json,
-                                      std::string* error);
+bool MergeRenderQualityClientSettingsOverrides(bool fxaa, double render_scale,
+                                               std::string_view base_json,
+                                               std::string* merged_json,
+                                               std::string* error);
 
 bool MergeAudioDeviceMenuClientSettingsOverrides(std::string_view base_json,
                                                  std::string *merged_json,

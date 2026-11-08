@@ -181,16 +181,20 @@ TEST(RuntimeConfigBootstrapTest,
             "# Boolean (default: false): render at physical display-pixel density instead\n  "
             "# of the logical desktop resolution. Enable only for sharper high-DPI output.\n  "
             "high_dpi: false",
-           "# String (default: native): resolution Roblox renders at. The window keeps\n  "
-           "# its configured width/height and the rendered image is scaled to fit it, so\n  "
-           "# a lower render resolution is a cheap FPS win on weak GPUs (e.g. Iris Xe).\n  "
-           "# `native` uses the host display resolution. Supported: native, 720p, 1080p\n  "
-           "# (`ask` is accepted as an alias of native; no startup dialog is shown).\n  "
-           "# render_resolution: native",
-           "# Number (default: 1.0): extra render-resolution scale applied on top of\n  "
-           "# render_resolution, between 0.25 and 1.0. 0.5 renders at half the chosen\n  "
-           "# resolution (e.g. 640x360 for 720p) and the window upscales the frames;\n  "
-           "# pair with fxaa: true to soften the upscale.\n  # render_scale: 1.0",
+           "# String (default: native): resolution the game is TOLD the display has\n  "
+           "# (reported display metrics only). The actual framebuffer always matches\n  "
+           "# the SDL window size, so this does NOT change GPU load by itself - use\n  "
+           "# render_scale below for that. `native` uses the host display resolution.\n  "
+           "# Supported: native, 720p, 1080p (`ask` is accepted as an alias of native;\n  "
+           "# no startup dialog is shown).\n  "
+           "# render_resolution: native\n  "
+           "# Number (default: 1.0): dynamic-resolution scale, between 0.25 and 1.0.\n  "
+           "# The 3D scene renders at this fraction of the actual window surface\n  "
+           "# (e.g. 0.5 on a 1280x650 window renders at 640x325) and is upscaled to the\n  "
+           "# window at present; pair with fxaa: true to soften the upscale. Unlike\n  "
+           "# render_resolution (which only changes the resolution the game is told\n  "
+           "# about), this lowers the real GPU workload - the lever to use on an iGPU.\n  "
+           "# render_scale: 1.0",
            "# Boolean (default: false): enable Roblox's FXAA post-process (MSAA off,\n  "
            "# post-processing on). Recommended together with render_scale < 1.\n  "
            "# fxaa: false",

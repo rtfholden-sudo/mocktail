@@ -178,12 +178,16 @@ Mocktail detects the host CPU and GPU at startup and records them in
   `config.yaml` (`$XDG_CONFIG_HOME/mocktail/config.yaml`, inside the Flatpak
   `~/.var/app/space.bigrat.mocktail/config/mocktail/config.yaml`):
   `window.render_resolution` picks `native` (default, host display), `720p`, or
-  `1080p`; `window.render_scale` (0.25–1.0, default 1.0) scales that down
-  further (e.g. `render_resolution: 720p` + `render_scale: 0.5` renders at
-  640x360); `window.fxaa: true` turns on Roblox's FXAA post-process to soften
-  the upscale. The SDL window keeps its configured `window.width`/`window.height`
-  and the rendered image is scaled to fit, so a lower render resolution is a
-  cheap FPS win on an Iris Xe iGPU without shrinking the window.
+  `1080p` — note this only changes the resolution the game is *told* about
+  (reported display metrics); the real framebuffer always matches the SDL
+  window size. `window.render_scale` (0.25–1.0, default 1.0) is the actual
+  performance lever: it sets the engine's dynamic-resolution target
+  (`FIntAutomaticDRSHundredthPercent`), so the 3D scene renders at that
+  fraction of the window surface (e.g. `render_scale: 0.5` on a 1280x650
+  window renders at 640x325) and is upscaled to the window at present — a real
+  FPS win on an Iris Xe iGPU without shrinking the window.
+  `window.fxaa: true` turns on Roblox's FXAA post-process to soften the
+  upscale.
 
 ## Privacy: telemetry is disabled
 
