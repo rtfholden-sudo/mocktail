@@ -48,6 +48,9 @@
 #include "runtime/runtime_config_file.h"
 #include "runtime/runtime_paths.h"
 #include "runtime/session_log.h"
+
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include "runtime/single_instance_lock.h"
 #include "runtime/support_bundle.h"
 #include "runtime/supported_launch_policy.h"
@@ -747,6 +750,30 @@ int main(int argc, char* argv[]) {
           std::filesystem::path("rbx_bin/libroblox.so");
   const bool needs_active_assets =
       !environment.HasNonEmpty("MOCKTAIL_ASSET_PATH");
+  {
+    // Stamp the raw-IP domain-allowlist cache with the active Roblox payload
+    // id so an update invalidates it, and point the engine at the cache file.
+    std::string payload_id = "unknown";
+    {
+      std::ifstream manifest(paths.active_payload_manifest());
+      const nlohmann::json document =
+          nlohmann::json::parse(manifest, nullptr, false, true);
+      if (!document.is_discarded() && document.is_object() &&
+          document.contains("payload_id") &&
+          document["payload_id"].is_string()) {
+        payload_id = document["payload_id"].get<std::string>();
+      }
+    }
+    const std::filesystem::path domain_cache =
+        paths.cache_root() / "domain_allowlist_cache.json";
+    if (setenv("MOCKTAIL_PAYLOAD_ID", payload_id.c_str(), 1) != 0 ||
+        setenv("MOCKTAIL_DOMAIN_CACHE_FILE", domain_cache.c_str(), 1) != 0) {
+      std::cerr << "[FATAL] Cannot export domain-allowlist cache paths\n";
+      return EXIT_FAILURE;
+    }
+    std::cout << "  [runtime] payload_id=" << payload_id
+              << " domain-allowlist-cache=" << domain_cache << '\n';
+  }
   if (needs_active_library || needs_active_assets) {
     const mocktail::runtime::ActivePayloadPaths active =
         paths.ResolveActivePayload();

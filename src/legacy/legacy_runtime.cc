@@ -47,6 +47,8 @@
 #include "compat/bionic_abi_exports.h"
 #include "compat/bionic_prctl_runtime.h"
 #include "compat/bionic_pthread_create_runtime.h"
+#include <filesystem>
+
 #include "compat/bionic_socket_runtime.h"
 #include "compat/build_profile.h"
 #include "compat/elf_build_id.h"
@@ -5629,6 +5631,17 @@ int mocktail::legacy::Run(const runtime::CommandLineOptions& options,
   }
   RegisterBionicDnsWrappers();
   RegisterBionicPathWrappers();
+  {
+    // Persistent raw-IP allowlist cache: stamped with the active payload
+    // version so a Roblox update discards it; the updater also unlinks the
+    // file on promotion.
+    const char* cache_file = std::getenv("MOCKTAIL_DOMAIN_CACHE_FILE");
+    const char* payload_id = std::getenv("MOCKTAIL_PAYLOAD_ID");
+    mocktail::runtime::ConfigureRawIpDomainCache(
+        cache_file != nullptr ? std::filesystem::path(cache_file)
+                              : std::filesystem::path(),
+        payload_id != nullptr ? payload_id : "");
+  }
   linker::RegisterSymbol("prctl",
                          reinterpret_cast<void*>(mocktail_bionic_prctl));
   linker::RegisterSymbol(

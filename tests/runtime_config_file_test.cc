@@ -222,6 +222,7 @@ TEST(RuntimeConfigBootstrapTest,
            "# Optional comma-separated domain allowlist for the GAME's "
            "connections",
            "allowed_domains: \"roblox.com,google.com,cloudflare.com,discord.com,discordapp.com\"",
+           "# cached on disk at $XDG_CACHE_HOME/mocktail/domain_allowlist_cache.json",
        }) {
     EXPECT_NE(defaults.find(documented_setting), std::string::npos)
         << documented_setting;

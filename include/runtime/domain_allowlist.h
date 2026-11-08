@@ -2,9 +2,12 @@
 #define MOCKTAIL_RUNTIME_DOMAIN_ALLOWLIST_H_
 
 #include <cstdint>
+#include <filesystem>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace mocktail {
@@ -84,9 +87,48 @@ std::optional<std::vector<std::uint32_t>> QueryARecords(
     const std::string& name, const std::vector<std::string>& resolvers,
     int timeout_ms);
 
-// Full raw-IP gate: reverse-resolve `address` via `resolvers`, check the PTR
-// names against `allowed`, forward-verify, and decide. Results are cached
-// per address for the process lifetime. An empty `allowed` allows
+// File-backed cache of raw-IP allow decisions, so later launches skip the
+// PTR/A round trips. The cache file is stamped with the active Roblox
+// payload version; when the version changes (i.e. after a Roblox update) the
+// stored entries are discarded and the file is overwritten on the next
+// decision. Format: {"version": "<payload id>", "entries": {"1.2.3.4": true}}.
+class RawIpDomainCache {
+ public:
+  RawIpDomainCache() = default;
+  RawIpDomainCache(std::filesystem::path file, std::string version);
+
+  // Memory/disk lookup. Returns false when the address is not cached.
+  bool Get(std::uint32_t address, bool* allowed);
+  // Stores a decision and persists the cache file (atomic replace, 0600).
+  void Put(std::uint32_t address, bool allowed);
+  // Full gate: cache lookup, then PTR + forward verification on a miss.
+  // An empty `allowed` allows everything without any network I/O.
+  bool Allowed(std::uint32_t address,
+               const std::vector<std::string>& allowed_domains);
+
+  const std::filesystem::path& file() const { return file_; }
+  const std::string& version() const { return version_; }
+
+ private:
+  friend void ConfigureRawIpDomainCache(std::filesystem::path, std::string);
+  void LoadLocked();
+  void PersistLocked();
+
+  std::mutex mutex_;
+  std::unordered_map<std::uint32_t, bool> entries_;
+  bool loaded_ = false;
+  std::filesystem::path file_;
+  std::string version_;
+};
+
+// Process-wide cache used by RawIpv4Allowed. Configure it once at startup
+// with the cache file path and the active payload version; with an empty
+// file path the cache is memory-only.
+void ConfigureRawIpDomainCache(std::filesystem::path file,
+                               std::string version);
+RawIpDomainCache& GlobalRawIpDomainCache();
+
+// Full raw-IP gate via the global cache. An empty `allowed` allows
 // everything without any network I/O.
 bool RawIpv4Allowed(std::uint32_t address,
                     const std::vector<std::string>& allowed);

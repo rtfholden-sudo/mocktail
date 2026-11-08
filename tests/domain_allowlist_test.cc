@@ -2,6 +2,10 @@
 
 #include <gtest/gtest.h>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <string>
 #include <vector>
 
@@ -18,6 +22,7 @@ using mocktail::runtime::ParseDnsPtrAnswers;
 using mocktail::runtime::ParseDomainAllowlist;
 using mocktail::runtime::ParseIpv4;
 using mocktail::runtime::RawIpDecision;
+using mocktail::runtime::RawIpDomainCache;
 
 namespace {
 
@@ -193,6 +198,81 @@ std::vector<std::uint8_t> CraftAResponse(std::uint32_t address) {
   p.push_back(static_cast<std::uint8_t>(address >> 8));
   p.push_back(static_cast<std::uint8_t>(address));
   return p;
+}
+
+namespace {
+
+struct TempCacheFile {
+  std::filesystem::path path =
+      std::filesystem::temp_directory_path() /
+      ("mocktail-da-cache-test-" + std::to_string(::getpid()) + "-" +
+       std::to_string(counter++) + ".json");
+  ~TempCacheFile() { std::error_code ec; std::filesystem::remove(path, ec); }
+  static int counter;
+};
+int TempCacheFile::counter = 0;
+
+}  // namespace
+
+TEST(DomainAllowlistTest, CachePersistsAcrossInstances) {
+  TempCacheFile temp;
+  {
+    RawIpDomainCache cache(temp.path, "version-1234");
+    cache.Put(0xCB007107U, true);
+    cache.Put(0x01010101U, false);
+  }
+  RawIpDomainCache reloaded(temp.path, "version-1234");
+  bool allowed = false;
+  ASSERT_TRUE(reloaded.Get(0xCB007107U, &allowed));
+  EXPECT_TRUE(allowed);
+  ASSERT_TRUE(reloaded.Get(0x01010101U, &allowed));
+  EXPECT_FALSE(allowed);
+  EXPECT_FALSE(reloaded.Get(0x08080808U, &allowed));
+  // File is private.
+  struct stat metadata {};
+  ASSERT_EQ(::stat(temp.path.c_str(), &metadata), 0);
+  EXPECT_EQ(metadata.st_mode & 0777, 0600);
+}
+
+TEST(DomainAllowlistTest, CacheDiscardedAfterPayloadVersionChange) {
+  TempCacheFile temp;
+  {
+    RawIpDomainCache cache(temp.path, "version-old");
+    cache.Put(0xCB007107U, true);
+  }
+  // Simulates a Roblox update: same file, new payload version.
+  RawIpDomainCache after_update(temp.path, "version-new");
+  bool allowed = true;
+  EXPECT_FALSE(after_update.Get(0xCB007107U, &allowed));
+  // And the next decision overwrites the file under the new version.
+  after_update.Put(0xCB007107U, false);
+  RawIpDomainCache verify(temp.path, "version-new");
+  ASSERT_TRUE(verify.Get(0xCB007107U, &allowed));
+  EXPECT_FALSE(allowed);
+  RawIpDomainCache stale(temp.path, "version-old");
+  EXPECT_FALSE(stale.Get(0xCB007107U, &allowed));
+}
+
+TEST(DomainAllowlistTest, CacheIgnoresMalformedFile) {
+  TempCacheFile temp;
+  {
+    std::ofstream output(temp.path, std::ios::binary | std::ios::trunc);
+    output << "not json at all {{{";
+  }
+  RawIpDomainCache cache(temp.path, "version-1");
+  bool allowed = true;
+  EXPECT_FALSE(cache.Get(0xCB007107U, &allowed));
+  cache.Put(0xCB007107U, true);
+  RawIpDomainCache reloaded(temp.path, "version-1");
+  ASSERT_TRUE(reloaded.Get(0xCB007107U, &allowed));
+  EXPECT_TRUE(allowed);
+}
+
+TEST(DomainAllowlistTest, EmptyAllowlistNeedsNoCacheOrNetwork) {
+  TempCacheFile temp;
+  RawIpDomainCache cache(temp.path, "version-1");
+  EXPECT_TRUE(cache.Allowed(0xCB007107U, {}));
+  EXPECT_FALSE(std::filesystem::exists(temp.path));
 }
 
 }  // namespace

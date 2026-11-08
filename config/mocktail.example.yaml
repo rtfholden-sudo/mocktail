@@ -182,8 +182,11 @@ network:
   # reverse-resolved (PTR) via 8.8.8.8/8.8.4.4/1.1.1.1 and allowed only when
   # a PTR name passes this list and forward-verifies back to the IP; direct
   # connect() calls to public IPs are gated the same way ("[net] blocked").
-  # Loopback/private/link-local ranges always pass. Empty (default) disables
-  # the restriction.
+  # Loopback/private/link-local ranges always pass. Raw-IP decisions are
+  # cached on disk at $XDG_CACHE_HOME/mocktail/domain_allowlist_cache.json
+  # (0600) for faster launches; the cache is discarded and overwritten
+  # whenever the active Roblox payload version changes (after an update).
+  # Empty (default) disables the restriction.
   allowed_domains: "roblox.com,google.com,cloudflare.com,discord.com,discordapp.com"
   # Optional fixed HTTP/SOCKS5 proxy. Uncomment host and port together.
   # The host must not contain a scheme such as http://.

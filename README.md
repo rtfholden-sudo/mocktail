@@ -160,9 +160,14 @@ when a PTR name passes the allowlist *and* forward A records point back to
 that IP (so the owner of an IP's reverse zone cannot spoof `roblox.com`);
 direct `connect()` calls to public IPs are gated the same way and logged as
 `[net] blocked ip=... reason=domain-allowlist`. Loopback, RFC1918, and
-link-local ranges never leave the machine and always pass. Empty
-(default) disables the restriction. Mocktail's own updater and
-client-settings downloads are unaffected.
+link-local ranges never leave the machine and always pass. Raw-IP decisions
+are cached on disk at `$XDG_CACHE_HOME/mocktail/domain_allowlist_cache.json`
+(mode 0600) so later launches skip the PTR/A round trips; the cache is
+stamped with the active Roblox payload id and is discarded/overwritten
+whenever that changes (the updater also deletes the file on every payload
+promotion), i.e. after each Roblox update. Empty (default) disables the
+restriction. Mocktail's own updater and client-settings downloads are
+unaffected.
 
 ## Universal disk logging
 

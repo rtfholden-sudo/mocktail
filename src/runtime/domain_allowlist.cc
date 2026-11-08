@@ -9,8 +9,11 @@
 #include <unordered_map>
 
 #include <arpa/inet.h>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -486,40 +489,163 @@ std::optional<std::vector<std::uint32_t>> QueryARecords(
                                      ParseDnsAAnswers);
 }
 
-bool RawIpv4Allowed(std::uint32_t address,
-                    const std::vector<std::string>& allowed) {
-  if (allowed.empty()) {
+namespace {
+
+// Network-only raw-IP gate (PTR via public resolvers + forward verify).
+bool ResolveRawIp(std::uint32_t address,
+                  const std::vector<std::string>& allowed) {
+  const std::vector<std::string> resolvers = DefaultPtrResolvers();
+  const auto ptr_names = QueryPtrRecords(address, resolvers, 1500);
+  if (!ptr_names.has_value()) {
+    return false;
+  }
+  std::vector<std::uint32_t> forward;
+  for (const std::string& name : *ptr_names) {
+    if (!DomainAllowed(name, allowed)) {
+      continue;
+    }
+    const auto addrs = QueryARecords(name, resolvers, 1500);
+    if (addrs.has_value()) {
+      forward.insert(forward.end(), addrs->begin(), addrs->end());
+    }
+  }
+  return DecideRawIp(*ptr_names, forward, address, allowed) ==
+         RawIpDecision::kAllow;
+}
+
+std::string Ipv4ToString(std::uint32_t address) {
+  char dotted[INET_ADDRSTRLEN] = {};
+  struct in_addr printable {};
+  printable.s_addr = ::htonl(address);
+  ::inet_ntop(AF_INET, &printable, dotted, sizeof(dotted));
+  return dotted;
+}
+
+}  // namespace
+
+RawIpDomainCache::RawIpDomainCache(std::filesystem::path file,
+                                   std::string version)
+    : file_(std::move(file)), version_(std::move(version)) {}
+
+void RawIpDomainCache::LoadLocked() {
+  if (loaded_) {
+    return;
+  }
+  loaded_ = true;
+  if (file_.empty()) {
+    return;
+  }
+  std::ifstream input(file_, std::ios::binary);
+  if (!input) {
+    return;
+  }
+  const nlohmann::json document =
+      nlohmann::json::parse(input, nullptr, false, true);
+  if (document.is_discarded() || !document.is_object()) {
+    return;
+  }
+  // A cache written for a different Roblox payload version is stale after
+  // an update: discard it so the file gets overwritten with fresh entries.
+  if (document.value("version", "") != version_) {
+    return;
+  }
+  const auto entries = document.find("entries");
+  if (entries == document.end() || !entries->is_object()) {
+    return;
+  }
+  for (const auto& [key, value] : entries->items()) {
+    std::uint32_t address = 0;
+    if (ParseIpv4(key, &address) && value.is_boolean()) {
+      entries_[address] = value.get<bool>();
+    }
+  }
+}
+
+void RawIpDomainCache::PersistLocked() {
+  if (file_.empty()) {
+    return;
+  }
+  nlohmann::json document;
+  document["version"] = version_;
+  nlohmann::json entries = nlohmann::json::object();
+  for (const auto& [address, allowed] : entries_) {
+    entries[Ipv4ToString(address)] = allowed;
+  }
+  document["entries"] = std::move(entries);
+  const std::filesystem::path parent = file_.parent_path();
+  if (!parent.empty()) {
+    std::error_code ec;
+    std::filesystem::create_directories(parent, ec);
+  }
+  const std::filesystem::path temporary =
+      file_.string() + ".tmp";
+  {
+    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+    if (!output) {
+      return;
+    }
+    output << document.dump(2) << '\n';
+  }
+  (void)::chmod(temporary.c_str(), 0600);
+  std::error_code ec;
+  std::filesystem::rename(temporary, file_, ec);
+  if (ec) {
+    (void)::unlink(temporary.c_str());
+  }
+}
+
+bool RawIpDomainCache::Get(std::uint32_t address, bool* allowed) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  LoadLocked();
+  const auto found = entries_.find(address);
+  if (found == entries_.end()) {
+    return false;
+  }
+  if (allowed != nullptr) {
+    *allowed = found->second;
+  }
+  return true;
+}
+
+void RawIpDomainCache::Put(std::uint32_t address, bool allowed) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  LoadLocked();
+  entries_[address] = allowed;
+  PersistLocked();
+}
+
+bool RawIpDomainCache::Allowed(std::uint32_t address,
+                               const std::vector<std::string>& allowed_domains) {
+  if (allowed_domains.empty()) {
     return true;
   }
-  static std::mutex cache_mutex;
-  static std::unordered_map<std::uint32_t, bool> cache;
-  {
-    std::lock_guard<std::mutex> lock(cache_mutex);
-    const auto found = cache.find(address);
-    if (found != cache.end()) {
-      return found->second;
-    }
+  bool cached = false;
+  if (Get(address, &cached)) {
+    return cached;
   }
-  const std::vector<std::string> resolvers = DefaultPtrResolvers();
-  bool allowed_result = false;
-  const auto ptr_names = QueryPtrRecords(address, resolvers, 1500);
-  if (ptr_names.has_value()) {
-    std::vector<std::uint32_t> forward;
-    for (const std::string& name : *ptr_names) {
-      if (!DomainAllowed(name, allowed)) {
-        continue;
-      }
-      const auto addrs = QueryARecords(name, resolvers, 1500);
-      if (addrs.has_value()) {
-        forward.insert(forward.end(), addrs->begin(), addrs->end());
-      }
-    }
-    allowed_result = DecideRawIp(*ptr_names, forward, address, allowed) ==
-                     RawIpDecision::kAllow;
-  }
-  std::lock_guard<std::mutex> lock(cache_mutex);
-  cache[address] = allowed_result;
-  return allowed_result;
+  const bool allowed = ResolveRawIp(address, allowed_domains);
+  Put(address, allowed);
+  return allowed;
+}
+
+RawIpDomainCache& GlobalRawIpDomainCache() {
+  static RawIpDomainCache cache;
+  return cache;
+}
+
+void ConfigureRawIpDomainCache(std::filesystem::path file,
+                               std::string version) {
+  RawIpDomainCache& cache = GlobalRawIpDomainCache();
+  std::lock_guard<std::mutex> lock(cache.mutex_);
+  cache.entries_.clear();
+  cache.loaded_ = false;
+  cache.file_ = std::move(file);
+  cache.version_ = std::move(version);
+}
+
+bool RawIpv4Allowed(std::uint32_t address,
+                    const std::vector<std::string>& allowed) {
+  return GlobalRawIpDomainCache().Allowed(address, allowed);
 }
 
 }  // namespace runtime

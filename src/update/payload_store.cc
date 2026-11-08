@@ -16,6 +16,7 @@
 #include <cctype>
 #include <cerrno>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -450,6 +451,16 @@ struct ManifestIdentity {
   explicit operator bool() const { return error.empty(); }
 };
 
+// After a Roblox update promotes a new payload, the raw-IP domain-allowlist
+// cache is stale: drop the file so the next launch rebuilds (and overwrites)
+// it under the new payload version.
+void InvalidateDomainAllowlistCache() {
+  const char* cache_file = std::getenv("MOCKTAIL_DOMAIN_CACHE_FILE");
+  if (cache_file != nullptr && cache_file[0] != '\0') {
+    (void)::unlink(cache_file);
+  }
+}
+
 ManifestIdentity ReadManifest(const std::filesystem::path& path,
                               bool missing_ok = false) {
   ManifestIdentity result;
@@ -698,6 +709,7 @@ PayloadStoreResult PayloadStore::Promote(std::string_view payload_id) {
   if (!WriteAtomic(root_, root_ / "current.json", contents, &result.error)) {
     return result;
   }
+  InvalidateDomainAllowlistCache();
   return result;
 }
 
@@ -760,6 +772,7 @@ PayloadStoreResult PayloadStore::PromoteProbation(
   if (!WriteAtomic(root_, root_ / "current.json", contents, &result.error)) {
     return result;
   }
+  InvalidateDomainAllowlistCache();
   result.version_name = payload.metadata.version_name;
   result.version_code = payload.metadata.version_code;
   result.build_id = payload.metadata.build_id;
