@@ -33,14 +33,14 @@ device: pc-windows-11
 # logs) to logs/sessions/<timestamp>.log plus logs/latest.log, and every
 # trace channel is switched on (engine, JNI, window, GL/EGL, FPS, DNS,
 # asset, post-client-settings), so all of it lands in that same log.
-logs: false
+# logs: false
 
 runtime:
   # Boolean (default: false): start without a visible SDL window.
   headless: false
   # String (optional): use a specific x86_64 libroblox.so instead of the
   # active verified payload.
-  #roblox_library: /absolute/path/to/libroblox.so
+  # roblox_library: /absolute/path/to/libroblox.so
 
 auth:
   use_libsecret: false
@@ -48,7 +48,7 @@ auth:
 appearance:
   # String (default: roblox): use Roblox's saved account theme. Supported
   # overrides: dark, light, or system (follow the desktop color scheme).
-  theme: dark
+  theme: roblox
 
 graphics:
   # String (default: direct-vulkan): graphics backend. Use opengl on hardware
@@ -59,9 +59,9 @@ graphics:
   # (or use -1) to let Roblox Basic Settings own the cap. Supported overrides:
   # display, unlimited, or any positive integer; fixed values are forwarded to
   # DFIntTaskSchedulerTargetFps without a whitelist.
-  frame_rate_limit: -1
+  # frame_rate_limit: -1
   # Optional presentation synchronization override: auto, on, or off.
-  vsync: off
+  # vsync: off
 
 performance:
   # Boolean (default: false): pin Roblox's minimum scheduler thread count to
@@ -81,7 +81,7 @@ performance:
   # topology is detected and every physical core otherwise; `all` always
   # uses every physical core; `performance` forces performance cores when
   # detectable. Supported: auto, all, performance.
-  worker_cores: auto
+  # worker_cores: auto
   # Integer MiB (default: 0): hard RAM cap for the Mocktail process tree.
   # 0 disables the cap. cgroup v2 also disables swap; other Linux systems use
   # an RSS+swap watchdog. 6144 is a conservative starting point for 32 GiB RAM.
@@ -112,11 +112,11 @@ integrations:
     proxy_port: 58443
     # Optional absolute public CA path. Default: $XDG_CONFIG_HOME/Fleasion/proxy_ca/ca.crt
     # or ~/.config/Fleasion/proxy_ca/ca.crt. Never select ca.key.
-    #ca_certificate: /home/user/.config/Fleasion/proxy_ca/ca.crt
+    # ca_certificate: /home/user/.config/Fleasion/proxy_ca/ca.crt
   discord_rpc:
     # Boolean (default: false): publish Mocktail activity to Discord Desktop.
     # This never signs in to Discord and never reads an account token.
-    enabled: true
+    enabled: false
     # Boolean (default: true): show the current Roblox experience name.
     show_place_name: true
     # Boolean (default: true): show how long the current session has run.
@@ -127,16 +127,16 @@ integrations:
       enabled: true
       # Boolean (default: true): never expose private or reserved joins.
       public_servers_only: true
-      button_label: Join Server
+      # button_label: Join Server
     # English defaults. Uncomment only the lines you want to customize.
-    #text:
-      #browsing: Browsing experiences
-      #joining: Joining an experience
-      #playing: "{place_name}"
-      #state: Playing Roblox
-      #unknown_place: Unknown experience
+    # text:
+    #   browsing: Browsing experiences
+    #   joining: Joining an experience
+    #   playing: "{place_name}"
+    #   state: Playing Roblox
+    #   unknown_place: Unknown experience
     # Advanced: overrides the application bundled by the package maintainer.
-    #application_id: 123456789012345678
+    # application_id: 123456789012345678
 
 window:
   # Integer (default: 1280): initial window width in logical desktop units.
@@ -154,7 +154,7 @@ window:
   # render_scale below for that. `native` uses the host display resolution.
   # Supported: native, 720p, 1080p (`ask` is accepted as an alias of native;
   # no startup dialog is shown).
-  render_resolution: native
+  # render_resolution: native
   # Number (default: 1.0): dynamic-resolution scale, between 0.25 and 1.0.
   # The 3D scene renders at this fraction of the actual window surface
   # (e.g. 0.5 on a 1280x650 window renders at 640x325) and is upscaled to the
@@ -165,10 +165,10 @@ window:
   # lower window.width/window.height instead: that directly shrinks the
   # real framebuffer. Set logs: true to check latest.log for whether the
   # DRS flag was applied.
-  render_scale: 0.7
+  # render_scale: 1.0
   # Boolean (default: false): enable Roblox's FXAA post-process (MSAA off,
   # post-processing on). Recommended together with render_scale < 1.
-  fxaa: true
+  # fxaa: false
 
 network:
   # Boolean (default: false): follow the host HTTP/SOCKS5 proxy and
@@ -178,21 +178,25 @@ network:
   # (Mocktail's own updater/settings downloads are unaffected). When set,
   # the engine may only resolve and connect to these domains and their
   # subdomains; every other host is refused with EAI_NONAME at DNS time and
-  # logged as "[dns] blocked". Empty (default) disables the restriction.
+  # logged as "[dns] blocked". Raw IPv4 literals (hard-coded IPs) are
+  # reverse-resolved (PTR) via 8.8.8.8/8.8.4.4/1.1.1.1 and allowed only when
+  # a PTR name passes this list and forward-verifies back to the IP; direct
+  # connect() calls to public IPs are gated the same way ("[net] blocked").
+  # Loopback/private/link-local ranges always pass. Empty (default) disables
+  # the restriction.
   allowed_domains: "roblox.com,google.com,cloudflare.com,discord.com,discordapp.com"
-  #use_system_proxy: false
   # Optional fixed HTTP/SOCKS5 proxy. Uncomment host and port together.
   # The host must not contain a scheme such as http://.
-  #proxy_scheme: http
+  # proxy_scheme: http
   # String (optional, default: disabled): proxy host name or IP address.
-  #proxy_host: 127.0.0.1
+  # proxy_host: 127.0.0.1
   # Integer (optional, default: disabled): proxy TCP port from 1 to 65535.
-  #proxy_port: 8080
-  #proxy_username: "user"
-  #proxy_password: "password"
+  # proxy_port: 8080
+  # proxy_username: "user"
+  # proxy_password: "password"
   # Absolute path (optional): custom PEM CA bundle. Mocktail reads this file
   # directly and does not replace it during Roblox payload updates.
-  #ca_bundle: /home/user/.config/mocktail/cacert.pem
+  # ca_bundle: /home/user/.config/mocktail/cacert.pem
 
 updates:
   # Boolean (default: true): check the latest Roblox version, derive an exact

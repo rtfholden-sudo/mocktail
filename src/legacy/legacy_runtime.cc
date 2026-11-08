@@ -1076,8 +1076,17 @@ bool GameDomainAllowed(const char* host) {
   if (allowed.empty()) {
     return true;
   }
-  return mocktail::runtime::DomainAllowed(host != nullptr ? host : "",
-                                          allowed);
+  if (mocktail::runtime::DomainAllowed(host != nullptr ? host : "", allowed)) {
+    return true;
+  }
+  // Raw IPv4 literal: reverse-resolve it via the public PTR resolvers and
+  // allow only when a PTR name passes the allowlist and forward-verifies
+  // back to this address (anti-spoofing).
+  std::uint32_t address = 0;
+  if (host != nullptr && mocktail::runtime::ParseIpv4(host, &address)) {
+    return mocktail::runtime::RawIpv4Allowed(address, allowed);
+  }
+  return false;
 }
 
 void LogBlockedDomain(const char* api, const char* host) {
@@ -5626,6 +5635,8 @@ int mocktail::legacy::Run(const runtime::CommandLineOptions& options,
       "setsockopt", reinterpret_cast<void*>(mocktail_bionic_setsockopt));
   linker::RegisterSymbol("sendmsg",
                          reinterpret_cast<void*>(mocktail_bionic_sendmsg));
+  linker::RegisterSymbol("connect",
+                         reinterpret_cast<void*>(mocktail_bionic_connect));
   linker::RegisterSymbol("mprotect", reinterpret_cast<void*>(mocktail_mprotect));
   linker::RegisterSymbol("pthread_condattr_init",
                          reinterpret_cast<void*>(mocktail_pthread_condattr_init));

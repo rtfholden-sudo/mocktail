@@ -221,7 +221,7 @@ TEST(RuntimeConfigBootstrapTest,
            "active payload.\n  launch_after_update: false",
            "# Optional comma-separated domain allowlist for the GAME's "
            "connections",
-           "# allowed_domains: \"roblox.com,google.com,cloudflare.com,discord.com\"",
+           "allowed_domains: \"roblox.com,google.com,cloudflare.com,discord.com,discordapp.com\"",
        }) {
     EXPECT_NE(defaults.find(documented_setting), std::string::npos)
         << documented_setting;
