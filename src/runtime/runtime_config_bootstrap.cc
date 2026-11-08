@@ -180,16 +180,15 @@ window:
   # render_resolution (which only changes the resolution the game is told
   # about), this lowers the real GPU workload - the lever to use on an iGPU.
   # On the direct-vulkan backend Mocktail clamps the Vulkan swapchain extent
-  # to this fraction itself (host-side, no engine flag needed), so it works
+  # to this fraction itself (host-side, no engine flag needed) and scales
+  # the game's recorded viewport/scissor/render area by the same factor,
+  # so the whole game renders into the smaller framebuffer and is upscaled
+  # to the window (no crop, mouse stays inside) - MangoHud-style. It works
   # even on Roblox builds that ignore locally-set flags (2025-09-29
   # allowlist). On other backends the DRS flag (FIntAutomaticDRSHundredthPercent)
   # is used instead and is ignored by allowlisted builds - then lower
   # window.width/window.height instead: that directly shrinks the real
   # framebuffer. Set logs: true to check latest.log for the applied scale.
-  # When active on the direct-vulkan backend, the game-visible window size
-  # and input coordinates are scaled by the same factor, so the whole game
-  # is shown (upscaled) instead of a cropped section and the mouse stays
-  # inside the visible area.
   # render_scale: 1.0
   # Boolean (default: false): enable Roblox's FXAA post-process (MSAA off,
   # post-processing on). Recommended together with render_scale < 1.

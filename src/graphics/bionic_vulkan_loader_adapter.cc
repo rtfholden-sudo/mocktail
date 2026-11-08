@@ -15,6 +15,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <vector>
 
 #include "mocktail/graphics/android_vulkan_wsi_adapter.h"
 #include "mocktail/graphics/present_mode_policy.h"
@@ -118,6 +119,28 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueWaitIdle(VkQueue queue);
 VKAPI_ATTR VkResult VKAPI_CALL vkDeviceWaitIdle(VkDevice device);
 VKAPI_ATTR VkResult VKAPI_CALL
 vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* present_info);
+VKAPI_ATTR void VKAPI_CALL vkCmdSetViewport(
+    VkCommandBuffer command_buffer, std::uint32_t first_viewport,
+    std::uint32_t viewport_count, const VkViewport* viewports);
+VKAPI_ATTR void VKAPI_CALL vkCmdSetScissor(
+    VkCommandBuffer command_buffer, std::uint32_t first_scissor,
+    std::uint32_t scissor_count, const VkRect2D* scissors);
+VKAPI_ATTR void VKAPI_CALL vkCmdSetViewportWithCount(
+    VkCommandBuffer command_buffer, std::uint32_t viewport_count,
+    const VkViewport* viewports);
+VKAPI_ATTR void VKAPI_CALL vkCmdSetScissorWithCount(
+    VkCommandBuffer command_buffer, std::uint32_t scissor_count,
+    const VkRect2D* scissors);
+VKAPI_ATTR void VKAPI_CALL vkCmdSetViewportWithCountEXT(
+    VkCommandBuffer command_buffer, std::uint32_t viewport_count,
+    const VkViewport* viewports);
+VKAPI_ATTR void VKAPI_CALL vkCmdSetScissorWithCountEXT(
+    VkCommandBuffer command_buffer, std::uint32_t scissor_count,
+    const VkRect2D* scissors);
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginRendering(
+    VkCommandBuffer command_buffer, const VkRenderingInfo* rendering_info);
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderingKHR(
+    VkCommandBuffer command_buffer, const VkRenderingInfoKHR* rendering_info);
 VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
     VkPhysicalDevice physical_device, VkSurfaceKHR surface,
     VkSurfaceCapabilitiesKHR* capabilities);
@@ -163,6 +186,11 @@ struct AdapterState {
     PFN_vkBeginCommandBuffer begin_command_buffer = nullptr;
     PFN_vkEndCommandBuffer end_command_buffer = nullptr;
     PFN_vkResetCommandBuffer reset_command_buffer = nullptr;
+    PFN_vkCmdSetViewport cmd_set_viewport = nullptr;
+    PFN_vkCmdSetScissor cmd_set_scissor = nullptr;
+    PFN_vkCmdSetViewportWithCount cmd_set_viewport_with_count = nullptr;
+    PFN_vkCmdSetScissorWithCount cmd_set_scissor_with_count = nullptr;
+    PFN_vkCmdBeginRendering begin_rendering = nullptr;
   };
 
   struct QueueBinding {
@@ -494,6 +522,28 @@ void RegisterHostDeviceDispatch(VkDevice device,
       get_device_proc_addr(device, "vkEndCommandBuffer"));
   dispatch.reset_command_buffer = reinterpret_cast<PFN_vkResetCommandBuffer>(
       get_device_proc_addr(device, "vkResetCommandBuffer"));
+  dispatch.cmd_set_viewport = reinterpret_cast<PFN_vkCmdSetViewport>(
+      get_device_proc_addr(device, "vkCmdSetViewport"));
+  dispatch.cmd_set_scissor = reinterpret_cast<PFN_vkCmdSetScissor>(
+      get_device_proc_addr(device, "vkCmdSetScissor"));
+  dispatch.cmd_set_viewport_with_count =
+      reinterpret_cast<PFN_vkCmdSetViewportWithCount>(
+          get_device_proc_addr(device, "vkCmdSetViewportWithCount") !=
+                  nullptr
+              ? get_device_proc_addr(device, "vkCmdSetViewportWithCount")
+              : get_device_proc_addr(device,
+                                     "vkCmdSetViewportWithCountEXT"));
+  dispatch.cmd_set_scissor_with_count =
+      reinterpret_cast<PFN_vkCmdSetScissorWithCount>(
+          get_device_proc_addr(device, "vkCmdSetScissorWithCount") !=
+                  nullptr
+              ? get_device_proc_addr(device, "vkCmdSetScissorWithCount")
+              : get_device_proc_addr(device,
+                                     "vkCmdSetScissorWithCountEXT"));
+  dispatch.begin_rendering = reinterpret_cast<PFN_vkCmdBeginRendering>(
+      get_device_proc_addr(device, "vkCmdBeginRendering") != nullptr
+          ? get_device_proc_addr(device, "vkCmdBeginRendering")
+          : get_device_proc_addr(device, "vkCmdBeginRenderingKHR"));
 
   AdapterState& state = State();
   std::lock_guard<std::mutex> lock(state.mutex);
@@ -732,6 +782,14 @@ PFN_vkVoidFunction AdapterProc(const char* name) {
   MOCKTAIL_VK_PROC(vkQueueWaitIdle)
   MOCKTAIL_VK_PROC(vkDeviceWaitIdle)
   MOCKTAIL_VK_PROC(vkQueuePresentKHR)
+  MOCKTAIL_VK_PROC(vkCmdSetViewport)
+  MOCKTAIL_VK_PROC(vkCmdSetScissor)
+  MOCKTAIL_VK_PROC(vkCmdSetViewportWithCount)
+  MOCKTAIL_VK_PROC(vkCmdSetScissorWithCount)
+  MOCKTAIL_VK_PROC(vkCmdSetViewportWithCountEXT)
+  MOCKTAIL_VK_PROC(vkCmdSetScissorWithCountEXT)
+  MOCKTAIL_VK_PROC(vkCmdBeginRendering)
+  MOCKTAIL_VK_PROC(vkCmdBeginRenderingKHR)
   MOCKTAIL_VK_PROC(vkGetPhysicalDeviceFeatures)
   MOCKTAIL_VK_PROC(vkGetPhysicalDeviceFeatures2)
   MOCKTAIL_VK_PROC(vkGetPhysicalDeviceFormatProperties)
@@ -841,7 +899,19 @@ bool IsDeviceAdapterProc(const char* name) {
                              std::strcmp(name, "vkQueueBindSparse") == 0 ||
                              std::strcmp(name, "vkQueueWaitIdle") == 0 ||
                              std::strcmp(name, "vkDeviceWaitIdle") == 0 ||
-                             std::strcmp(name, "vkQueuePresentKHR") == 0);
+                             std::strcmp(name, "vkQueuePresentKHR") == 0 ||
+                             std::strcmp(name, "vkCmdSetViewport") == 0 ||
+                             std::strcmp(name, "vkCmdSetScissor") == 0 ||
+                             std::strcmp(name, "vkCmdSetViewportWithCount") ==
+                                 0 ||
+                             std::strcmp(name, "vkCmdSetScissorWithCount") ==
+                                 0 ||
+                             std::strcmp(name, "vkCmdSetViewportWithCountEXT") ==
+                                 0 ||
+                             std::strcmp(name, "vkCmdSetScissorWithCountEXT") ==
+                                 0 ||
+                             std::strcmp(name, "vkCmdBeginRendering") == 0 ||
+                             std::strcmp(name, "vkCmdBeginRenderingKHR") == 0);
 }
 
 bool IsGlobalAdapterProc(const char* name) {
@@ -2038,6 +2108,97 @@ VKAPI_ATTR VkResult VKAPI_CALL vkResetCommandBuffer(
   const VkResult result = host_reset(command_buffer, flags);
   observation.SetResult(result);
   return result;
+}
+
+// MangoHud-style host render scale: when window.render_scale < 1 on this
+// backend the swapchain is clamped to that fraction of the window, so every
+// viewport / scissor / render area the game records (in full-window
+// coordinates) is scaled down by the same factor here. Presentation then
+// upscales the smaller framebuffer to the window, so the whole game is
+// visible and input keeps working in the game's own coordinate space.
+VKAPI_ATTR void VKAPI_CALL vkCmdSetViewport(
+    VkCommandBuffer command_buffer, std::uint32_t first_viewport,
+    std::uint32_t viewport_count, const VkViewport* viewports) {
+  const PFN_vkCmdSetViewport host_set_viewport =
+      HostDispatchForCommandBuffer(command_buffer).cmd_set_viewport;
+  if (host_set_viewport == nullptr) {
+    return;
+  }
+  if (!mocktail::graphics::HostFramebufferScaleActive() || viewports == nullptr ||
+      viewport_count == 0) {
+    host_set_viewport(command_buffer, first_viewport, viewport_count,
+                      viewports);
+    return;
+  }
+  std::vector<VkViewport> scaled(viewports, viewports + viewport_count);
+  mocktail::graphics::ScaleViewports(scaled.data(), viewport_count, mocktail::graphics::CachedRenderScale());
+  host_set_viewport(command_buffer, first_viewport, viewport_count,
+                    scaled.data());
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetScissor(
+    VkCommandBuffer command_buffer, std::uint32_t first_scissor,
+    std::uint32_t scissor_count, const VkRect2D* scissors) {
+  const PFN_vkCmdSetScissor host_set_scissor =
+      HostDispatchForCommandBuffer(command_buffer).cmd_set_scissor;
+  if (host_set_scissor == nullptr) {
+    return;
+  }
+  if (!mocktail::graphics::HostFramebufferScaleActive() || scissors == nullptr ||
+      scissor_count == 0) {
+    host_set_scissor(command_buffer, first_scissor, scissor_count,
+                     scissors);
+    return;
+  }
+  std::vector<VkRect2D> scaled(scissors, scissors + scissor_count);
+  mocktail::graphics::ScaleScissors(scaled.data(), scissor_count, mocktail::graphics::CachedRenderScale());
+  host_set_scissor(command_buffer, first_scissor, scissor_count,
+                   scaled.data());
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetViewportWithCount(
+    VkCommandBuffer command_buffer, std::uint32_t viewport_count,
+    const VkViewport* viewports) {
+  vkCmdSetViewport(command_buffer, 0, viewport_count, viewports);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetScissorWithCount(
+    VkCommandBuffer command_buffer, std::uint32_t scissor_count,
+    const VkRect2D* scissors) {
+  vkCmdSetScissor(command_buffer, 0, scissor_count, scissors);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetViewportWithCountEXT(
+    VkCommandBuffer command_buffer, std::uint32_t viewport_count,
+    const VkViewport* viewports) {
+  vkCmdSetViewportWithCount(command_buffer, viewport_count, viewports);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetScissorWithCountEXT(
+    VkCommandBuffer command_buffer, std::uint32_t scissor_count,
+    const VkRect2D* scissors) {
+  vkCmdSetScissorWithCount(command_buffer, scissor_count, scissors);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginRendering(
+    VkCommandBuffer command_buffer, const VkRenderingInfo* rendering_info) {
+  const PFN_vkCmdBeginRendering host_begin =
+      HostDispatchForCommandBuffer(command_buffer).begin_rendering;
+  if (host_begin == nullptr) {
+    return;
+  }
+  if (!mocktail::graphics::HostFramebufferScaleActive() || rendering_info == nullptr) {
+    host_begin(command_buffer, rendering_info);
+    return;
+  }
+  VkRenderingInfo scaled = *rendering_info;
+  mocktail::graphics::ScaleRect2D(&scaled.renderArea, mocktail::graphics::CachedRenderScale());
+  host_begin(command_buffer, &scaled);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderingKHR(
+    VkCommandBuffer command_buffer, const VkRenderingInfoKHR* rendering_info) {
+  vkCmdBeginRendering(command_buffer, rendering_info);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkWaitSemaphores(

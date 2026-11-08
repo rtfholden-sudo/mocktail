@@ -5011,23 +5011,11 @@ int mocktail::legacy::Run(const runtime::CommandLineOptions& options,
     const mocktail::window::WindowViewportSnapshot viewport =
         mocktail::window::GetWindowViewportSnapshot();
     if (viewport.valid()) {
-      // Under host-side framebuffer scaling (window.render_scale < 1 on the
-      // Vulkan backend) the game-visible window is the scaled framebuffer,
-      // so the sizes reported to the game (and used for input mapping) are
-      // scaled as well; the real SDL window stays at its configured size.
-      const double host_scale = mocktail::runtime::HostRenderScale();
-      const mocktail::runtime::DisplaySize game_window =
-          mocktail::runtime::ApplyRenderScale(
-              {viewport.pixel_width, viewport.pixel_height}, host_scale);
-      const std::string window_size = std::to_string(game_window.width) +
+      const std::string window_size = std::to_string(viewport.pixel_width) +
                                       "x" +
-                                      std::to_string(game_window.height);
+                                      std::to_string(viewport.pixel_height);
       setenv(mocktail::runtime::kWindowSizeEnvironment, window_size.c_str(),
              1);
-      if (host_scale > 0.0 && host_scale < 1.0) {
-        setenv(mocktail::runtime::kDisplaySizeEnvironment, window_size.c_str(),
-               1);
-      }
     }
   }
   const SDL_SystemTheme system_theme =
