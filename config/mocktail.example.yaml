@@ -33,7 +33,7 @@ device: pc-windows-11
 # logs) to logs/sessions/<timestamp>.log plus logs/latest.log, and every
 # trace channel is switched on (engine, JNI, window, GL/EGL, FPS, DNS,
 # asset, post-client-settings), so all of it lands in that same log.
-# logs: false
+logs: false
 
 runtime:
   # Boolean (default: false): start without a visible SDL window.
@@ -48,7 +48,7 @@ auth:
 appearance:
   # String (default: roblox): use Roblox's saved account theme. Supported
   # overrides: dark, light, or system (follow the desktop color scheme).
-  theme: roblox
+  theme: dark
 
 graphics:
   # String (default: direct-vulkan): graphics backend. Use opengl on hardware
@@ -61,7 +61,7 @@ graphics:
   # DFIntTaskSchedulerTargetFps without a whitelist.
   # frame_rate_limit: -1
   # Optional presentation synchronization override: auto, on, or off.
-  # vsync: off
+  vsync: off
 
 performance:
   # Boolean (default: false): pin Roblox's minimum scheduler thread count to
@@ -116,7 +116,7 @@ integrations:
   discord_rpc:
     # Boolean (default: false): publish Mocktail activity to Discord Desktop.
     # This never signs in to Discord and never reads an account token.
-    enabled: false
+    enabled: true
     # Boolean (default: true): show the current Roblox experience name.
     show_place_name: true
     # Boolean (default: true): show how long the current session has run.
@@ -154,7 +154,7 @@ window:
   # render_scale below for that. `native` uses the host display resolution.
   # Supported: native, 720p, 1080p (`ask` is accepted as an alias of native;
   # no startup dialog is shown).
-  # render_resolution: native
+  render_resolution: native
   # Number (default: 1.0): dynamic-resolution scale, between 0.25 and 1.0.
   # The 3D scene renders at this fraction of the actual window surface
   # (e.g. 0.5 on a 1280x650 window renders at 640x325) and is upscaled to the
@@ -165,10 +165,10 @@ window:
   # lower window.width/window.height instead: that directly shrinks the
   # real framebuffer. Set logs: true to check latest.log for whether the
   # DRS flag was applied.
-  # render_scale: 1.0
+  render_scale: 0.75
   # Boolean (default: false): enable Roblox's FXAA post-process (MSAA off,
   # post-processing on). Recommended together with render_scale < 1.
-  # fxaa: false
+  fxaa: false
 
 network:
   # Boolean (default: false): follow the host HTTP/SOCKS5 proxy and
