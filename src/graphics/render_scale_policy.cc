@@ -116,5 +116,71 @@ void ScaleScissors(VkRect2D* scissors, std::uint32_t count, double scale) {
   }
 }
 
+bool ViewportExceedsFramebuffer(const VkViewport& viewport,
+                                VkExtent2D framebuffer) {
+  if (framebuffer.width == 0 || framebuffer.height == 0) {
+    return false;
+  }
+  const double right =
+      static_cast<double>(viewport.x) + std::fabs(viewport.width);
+  const double bottom =
+      static_cast<double>(viewport.y) + std::fabs(viewport.height);
+  return viewport.x < 0.0f || viewport.y < 0.0f ||
+         right > static_cast<double>(framebuffer.width) ||
+         bottom > static_cast<double>(framebuffer.height);
+}
+
+bool RectExceedsFramebuffer(const VkRect2D& rect, VkExtent2D framebuffer) {
+  if (framebuffer.width == 0 || framebuffer.height == 0) {
+    return false;
+  }
+  return rect.offset.x < 0 || rect.offset.y < 0 ||
+         static_cast<std::int64_t>(rect.offset.x) + rect.extent.width >
+             framebuffer.width ||
+         static_cast<std::int64_t>(rect.offset.y) + rect.extent.height >
+             framebuffer.height;
+}
+
+void ScaleViewportsToFramebuffer(VkViewport* viewports, std::uint32_t count,
+                                 double scale_x, double scale_y,
+                                 VkExtent2D framebuffer) {
+  if (viewports == nullptr) {
+    return;
+  }
+  for (std::uint32_t i = 0; i < count; ++i) {
+    if (!ViewportExceedsFramebuffer(viewports[i], framebuffer)) {
+      continue;
+    }
+    viewports[i].x *= static_cast<float>(scale_x);
+    viewports[i].y *= static_cast<float>(scale_y);
+    viewports[i].width *= static_cast<float>(scale_x);
+    viewports[i].height *= static_cast<float>(scale_y);
+  }
+}
+
+void ScaleRect2DToFramebuffer(VkRect2D* rect, double scale_x, double scale_y,
+                              VkExtent2D framebuffer) {
+  if (rect == nullptr || !RectExceedsFramebuffer(*rect, framebuffer)) {
+    return;
+  }
+  rect->offset.x = static_cast<std::int32_t>(rect->offset.x * scale_x);
+  rect->offset.y = static_cast<std::int32_t>(rect->offset.y * scale_y);
+  rect->extent.width =
+      static_cast<std::uint32_t>(rect->extent.width * scale_x);
+  rect->extent.height =
+      static_cast<std::uint32_t>(rect->extent.height * scale_y);
+}
+
+void ScaleScissorsToFramebuffer(VkRect2D* scissors, std::uint32_t count,
+                                double scale_x, double scale_y,
+                                VkExtent2D framebuffer) {
+  if (scissors == nullptr) {
+    return;
+  }
+  for (std::uint32_t i = 0; i < count; ++i) {
+    ScaleRect2DToFramebuffer(&scissors[i], scale_x, scale_y, framebuffer);
+  }
+}
+
 } // namespace graphics
 } // namespace mocktail

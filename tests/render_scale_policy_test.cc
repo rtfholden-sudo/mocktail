@@ -122,6 +122,42 @@ TEST(RenderScalePolicyTest, ViewportScalingIsNoOpAtFullScale) {
   ScaleRect2D(nullptr, 0.5);
 }
 
+TEST(RenderScalePolicyTest, ScalesOnlyViewportsExceedingTheFramebuffer) {
+  const VkExtent2D fb{320, 180};
+  VkViewport viewports[3] = {
+      {0.0f, 0.0f, 1280.0f, 720.0f, 0.0f, 1.0f},   // full window -> scale
+      {0.0f, 0.0f, 320.0f, 180.0f, 0.0f, 1.0f},    // already framebuffer-sized
+      {0.0f, 720.0f, 1280.0f, -720.0f, 0.0f, 1.0f}};  // flipped full window
+  ScaleViewportsToFramebuffer(viewports, 3, 0.25, 0.25, fb);
+  EXPECT_FLOAT_EQ(viewports[0].width, 320.0f);
+  EXPECT_FLOAT_EQ(viewports[0].height, 180.0f);
+  EXPECT_FLOAT_EQ(viewports[1].width, 320.0f);   // untouched
+  EXPECT_FLOAT_EQ(viewports[1].height, 180.0f);
+  EXPECT_FLOAT_EQ(viewports[2].y, 180.0f);
+  EXPECT_FLOAT_EQ(viewports[2].width, 320.0f);
+  EXPECT_FLOAT_EQ(viewports[2].height, -180.0f);
+  EXPECT_TRUE(ViewportExceedsFramebuffer({0.0f, 0.0f, 1280.0f, 720.0f, 0.0f, 1.0f}, fb));
+  EXPECT_FALSE(ViewportExceedsFramebuffer({0.0f, 0.0f, 320.0f, 180.0f, 0.0f, 1.0f}, fb));
+}
+
+TEST(RenderScalePolicyTest, ScalesOnlyScissorsExceedingTheFramebuffer) {
+  const VkExtent2D fb{320, 180};
+  VkRect2D scissors[2] = {{{0, 0}, {1280u, 720u}}, {{8, 16}, {300u, 160u}}};
+  ScaleScissorsToFramebuffer(scissors, 2, 0.25, 0.25, fb);
+  EXPECT_EQ(scissors[0].extent.width, 320u);
+  EXPECT_EQ(scissors[0].extent.height, 180u);
+  EXPECT_EQ(scissors[1].offset.x, 8);    // inside the framebuffer: untouched
+  EXPECT_EQ(scissors[1].extent.width, 300u);
+  VkRect2D area{{0, 0}, {1280u, 720u}};
+  ScaleRect2DToFramebuffer(&area, 0.25, 0.25, fb);
+  EXPECT_EQ(area.extent.width, 320u);
+  VkRect2D inside{{0, 0}, {320u, 180u}};
+  ScaleRect2DToFramebuffer(&inside, 0.25, 0.25, fb);
+  EXPECT_EQ(inside.extent.width, 320u);
+  EXPECT_TRUE(RectExceedsFramebuffer({{0, 0}, {321u, 180u}}, fb));
+  EXPECT_FALSE(RectExceedsFramebuffer({{0, 0}, {320u, 180u}}, fb));
+}
+
 }  // namespace
 }  // namespace graphics
 }  // namespace mocktail

@@ -229,6 +229,7 @@ struct AdapterState {
   std::atomic<NoteSurfaceOutOfDateFn> note_surface_out_of_date{nullptr};
   bool extent_translation_logged = false;
   bool scale_extent_logged = false;
+  VkExtent2D clamped_framebuffer{0, 0};
   bool present_policy_logged = false;
   bool initialized = false;
 };
@@ -1845,6 +1846,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
                        scaled.height);
         }
         host_info.imageExtent = scaled;
+        AdapterState& state = State();
+        std::lock_guard<std::mutex> lock(state.mutex);
+        state.clamped_framebuffer = scaled;
       }
     }
   }
@@ -2111,12 +2115,66 @@ VKAPI_ATTR VkResult VKAPI_CALL vkResetCommandBuffer(
   return result;
 }
 
+namespace {
+
+// Full-window pixel extent via the host window exports, or {0, 0}.
+VkExtent2D HostWindowExtent() {
+  using DimensionFn = int (*)();
+  const DimensionFn width =
+      ResolveProcessFunction<DimensionFn>("mocktail_window_width");
+  const DimensionFn height =
+      ResolveProcessFunction<DimensionFn>("mocktail_window_height");
+  if (width == nullptr || height == nullptr || width() <= 0 ||
+      height() <= 0) {
+    return {0, 0};
+  }
+  return {static_cast<std::uint32_t>(width()),
+          static_cast<std::uint32_t>(height())};
+}
+
+// The clamped framebuffer extent plus the per-axis factor that maps
+// full-window coordinates onto it. Returns {0, 0} when unknown.
+VkExtent2D ClampedFramebufferExtent(double* scale_x, double* scale_y) {
+  VkExtent2D framebuffer{0, 0};
+  {
+    AdapterState& state = State();
+    std::lock_guard<std::mutex> lock(state.mutex);
+    framebuffer = state.clamped_framebuffer;
+  }
+  const VkExtent2D window = HostWindowExtent();
+  if (framebuffer.width == 0 || framebuffer.height == 0) {
+    if (window.width == 0 || window.height == 0) {
+      return {0, 0};
+    }
+    framebuffer = mocktail::graphics::ScaleSwapchainExtent(
+        window, mocktail::graphics::CachedRenderScale(), {1, 1},
+        {UINT32_MAX, UINT32_MAX});
+  }
+  if (scale_x != nullptr) {
+    *scale_x = window.width > 0
+                   ? static_cast<double>(framebuffer.width) / window.width
+                   : 1.0;
+  }
+  if (scale_y != nullptr) {
+    *scale_y = window.height > 0
+                   ? static_cast<double>(framebuffer.height) / window.height
+                   : 1.0;
+  }
+  return framebuffer;
+}
+
+}  // namespace
+
 // MangoHud-style host render scale: when window.render_scale < 1 on this
-// backend the swapchain is clamped to that fraction of the window, so every
-// viewport / scissor / render area the game records (in full-window
-// coordinates) is scaled down by the same factor here. Presentation then
-// upscales the smaller framebuffer to the window, so the whole game is
-// visible and input keeps working in the game's own coordinate space.
+// backend the swapchain is clamped to that fraction of the window. Any
+// viewport / scissor / render area the game records in full-window
+// coordinates would then stick out of the smaller framebuffer (crop), so
+// here it is scaled onto the framebuffer. Rects already inside the
+// framebuffer (passes that sized themselves from the swapchain extent) are
+// left untouched - scaling those too would shrink them into a corner and
+// leave black areas. Presentation upscales the smaller framebuffer to the
+// window, so the whole game stays visible and input keeps working in the
+// game's own full-window coordinate space.
 VKAPI_ATTR void VKAPI_CALL vkCmdSetViewport(
     VkCommandBuffer command_buffer, std::uint32_t first_viewport,
     std::uint32_t viewport_count, const VkViewport* viewports) {
@@ -2125,14 +2183,19 @@ VKAPI_ATTR void VKAPI_CALL vkCmdSetViewport(
   if (host_set_viewport == nullptr) {
     return;
   }
-  if (!mocktail::graphics::HostFramebufferScaleActive() || viewports == nullptr ||
-      viewport_count == 0) {
+  double scale_x = 1.0, scale_y = 1.0;
+  const VkExtent2D framebuffer =
+      mocktail::graphics::HostFramebufferScaleActive()
+          ? ClampedFramebufferExtent(&scale_x, &scale_y)
+          : VkExtent2D{0, 0};
+  if (viewports == nullptr || viewport_count == 0 || framebuffer.width == 0) {
     host_set_viewport(command_buffer, first_viewport, viewport_count,
                       viewports);
     return;
   }
   std::vector<VkViewport> scaled(viewports, viewports + viewport_count);
-  mocktail::graphics::ScaleViewports(scaled.data(), viewport_count, mocktail::graphics::CachedRenderScale());
+  mocktail::graphics::ScaleViewportsToFramebuffer(
+      scaled.data(), viewport_count, scale_x, scale_y, framebuffer);
   host_set_viewport(command_buffer, first_viewport, viewport_count,
                     scaled.data());
 }
@@ -2145,14 +2208,19 @@ VKAPI_ATTR void VKAPI_CALL vkCmdSetScissor(
   if (host_set_scissor == nullptr) {
     return;
   }
-  if (!mocktail::graphics::HostFramebufferScaleActive() || scissors == nullptr ||
-      scissor_count == 0) {
+  double scale_x = 1.0, scale_y = 1.0;
+  const VkExtent2D framebuffer =
+      mocktail::graphics::HostFramebufferScaleActive()
+          ? ClampedFramebufferExtent(&scale_x, &scale_y)
+          : VkExtent2D{0, 0};
+  if (scissors == nullptr || scissor_count == 0 || framebuffer.width == 0) {
     host_set_scissor(command_buffer, first_scissor, scissor_count,
                      scissors);
     return;
   }
   std::vector<VkRect2D> scaled(scissors, scissors + scissor_count);
-  mocktail::graphics::ScaleScissors(scaled.data(), scissor_count, mocktail::graphics::CachedRenderScale());
+  mocktail::graphics::ScaleScissorsToFramebuffer(
+      scaled.data(), scissor_count, scale_x, scale_y, framebuffer);
   host_set_scissor(command_buffer, first_scissor, scissor_count,
                    scaled.data());
 }
@@ -2188,12 +2256,18 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginRendering(
   if (host_begin == nullptr) {
     return;
   }
-  if (!mocktail::graphics::HostFramebufferScaleActive() || rendering_info == nullptr) {
+  double scale_x = 1.0, scale_y = 1.0;
+  const VkExtent2D framebuffer =
+      mocktail::graphics::HostFramebufferScaleActive()
+          ? ClampedFramebufferExtent(&scale_x, &scale_y)
+          : VkExtent2D{0, 0};
+  if (rendering_info == nullptr || framebuffer.width == 0) {
     host_begin(command_buffer, rendering_info);
     return;
   }
   VkRenderingInfo scaled = *rendering_info;
-  mocktail::graphics::ScaleRect2D(&scaled.renderArea, mocktail::graphics::CachedRenderScale());
+  mocktail::graphics::ScaleRect2DToFramebuffer(&scaled.renderArea, scale_x,
+                                               scale_y, framebuffer);
   host_begin(command_buffer, &scaled);
 }
 
@@ -2406,7 +2480,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
           std::fprintf(
               stderr,
               "  [vulkan] render_scale=%.2f surface currentExtent -> %ux%u "
-              "(viewport matches clamped swapchain)\n",
+              "(full-window viewports are scaled onto it)\n",
               render_scale, scaled.width, scaled.height);
         }
       }
