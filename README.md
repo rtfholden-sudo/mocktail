@@ -160,9 +160,10 @@ when a PTR name passes the allowlist *and* forward A records point back to
 that IP (so the owner of an IP's reverse zone cannot spoof `roblox.com`);
 direct `connect()` calls to public IPs are gated the same way and logged as
 `[net] blocked ip=... reason=domain-allowlist`. IPs that an allowlisted
-hostname resolved to are trusted directly (recorded in the same cache), so
-CDN edge IPs whose PTR name is not under an allowed domain are not blocked;
-the PTR gate applies only to IPs no allowlisted hostname ever produced.
+hostname resolved to are trusted directly (recorded in the same cache,
+overriding any earlier cached PTR denial for that IP), so CDN edge IPs
+whose PTR name is not under an allowed domain are not blocked; the PTR
+gate applies only to IPs no allowlisted hostname ever produced.
 Loopback, RFC1918, and link-local ranges never leave the machine and always
 pass. Raw-IP decisions
 are cached on disk at `$XDG_CACHE_HOME/mocktail/domain_allowlist_cache.json`

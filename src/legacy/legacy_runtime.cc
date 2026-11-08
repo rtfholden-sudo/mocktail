@@ -1125,7 +1125,11 @@ void MarkResolvedAddressesAllowed(const char* host, const BionicAddrInfo* info) 
         reinterpret_cast<const struct sockaddr_in*>(current->ai_addr);
     const std::uint32_t address = ::ntohl(in->sin_addr.s_addr);
     bool cached = false;
-    if (!mocktail::runtime::GlobalRawIpDomainCache().Get(address, &cached)) {
+    // A fresh resolution from an allowlisted hostname is stronger evidence
+    // than an earlier PTR denial (e.g. a stale `false` persisted in the
+    // on-disk cache by a previous launch), so overwrite false entries.
+    if (!mocktail::runtime::GlobalRawIpDomainCache().Get(address, &cached) ||
+        !cached) {
       mocktail::runtime::GlobalRawIpDomainCache().Put(address, true);
     }
   }
@@ -1153,7 +1157,8 @@ void MarkHostentAddressesAllowed(const char* host, const hostent* result) {
     std::memcpy(&decoded, *address, sizeof(decoded));
     const std::uint32_t host_order = ::ntohl(decoded);
     bool cached = false;
-    if (!mocktail::runtime::GlobalRawIpDomainCache().Get(host_order, &cached)) {
+    if (!mocktail::runtime::GlobalRawIpDomainCache().Get(host_order, &cached) ||
+        !cached) {
       mocktail::runtime::GlobalRawIpDomainCache().Put(host_order, true);
     }
   }
