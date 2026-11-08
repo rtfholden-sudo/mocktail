@@ -1,6 +1,7 @@
 #ifndef MOCKTAIL_GRAPHICS_RENDER_SCALE_POLICY_H_
 #define MOCKTAIL_GRAPHICS_RENDER_SCALE_POLICY_H_
 
+#include <cstdint>
 #include <string_view>
 
 #include <vulkan/vulkan.h>
