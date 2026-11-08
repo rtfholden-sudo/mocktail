@@ -33,7 +33,7 @@ device: pc-windows-11
 # logs) to logs/sessions/<timestamp>.log plus logs/latest.log, and every
 # trace channel is switched on (engine, JNI, window, GL/EGL, FPS, DNS,
 # asset, post-client-settings), so all of it lands in that same log.
-# logs: false
+logs: false
 
 runtime:
   # Boolean (default: false): start without a visible SDL window.
@@ -48,7 +48,7 @@ auth:
 appearance:
   # String (default: roblox): use Roblox's saved account theme. Supported
   # overrides: dark, light, or system (follow the desktop color scheme).
-  theme: roblox
+  theme: dark
 
 graphics:
   # String (default: direct-vulkan): graphics backend. Use opengl on hardware
@@ -61,7 +61,7 @@ graphics:
   # DFIntTaskSchedulerTargetFps without a whitelist.
   # frame_rate_limit: -1
   # Optional presentation synchronization override: auto, on, or off.
-  # vsync: off
+  vsync: off
 
 performance:
   # Boolean (default: false): pin Roblox's minimum scheduler thread count to
@@ -81,7 +81,7 @@ performance:
   # topology is detected and every physical core otherwise; `all` always
   # uses every physical core; `performance` forces performance cores when
   # detectable. Supported: auto, all, performance.
-  # worker_cores: auto
+  worker_cores: auto
   # Integer MiB (default: 0): hard RAM cap for the Mocktail process tree.
   # 0 disables the cap. cgroup v2 also disables swap; other Linux systems use
   # an RSS+swap watchdog. 6144 is a conservative starting point for 32 GiB RAM.
@@ -116,7 +116,7 @@ integrations:
   discord_rpc:
     # Boolean (default: false): publish Mocktail activity to Discord Desktop.
     # This never signs in to Discord and never reads an account token.
-    enabled: false
+    enabled: true
     # Boolean (default: true): show the current Roblox experience name.
     show_place_name: true
     # Boolean (default: true): show how long the current session has run.
@@ -127,7 +127,7 @@ integrations:
       enabled: true
       # Boolean (default: true): never expose private or reserved joins.
       public_servers_only: true
-      # button_label: Join Server
+      button_label: Join
     # English defaults. Uncomment only the lines you want to customize.
     # text:
     #   browsing: Browsing experiences
@@ -165,10 +165,10 @@ window:
   # lower window.width/window.height instead: that directly shrinks the
   # real framebuffer. Set logs: true to check latest.log for whether the
   # DRS flag was applied.
-  # render_scale: 1.0
+  render_scale: 0.25
   # Boolean (default: false): enable Roblox's FXAA post-process (MSAA off,
   # post-processing on). Recommended together with render_scale < 1.
-  # fxaa: false
+  fxaa: false
 
 network:
   # Boolean (default: false): follow the host HTTP/SOCKS5 proxy and
@@ -179,27 +179,16 @@ network:
   # the engine may only resolve and connect to these domains and their
   # subdomains; every other host is refused with EAI_NONAME at DNS time and
   # logged as "[dns] blocked". Raw IPv4 literals (hard-coded IPs) are
-  # reverse-resolved (PTR) via the dns_resolver list below and allowed only when
+  # reverse-resolved (PTR) via 8.8.8.8/8.8.4.4/1.1.1.1 and allowed only when
   # a PTR name passes this list and forward-verifies back to the IP; direct
   # connect() calls to public IPs are gated the same way ("[net] blocked").
-  # IPs returned when resolving an allowlisted hostname are trusted
-  # directly (recorded in the same cache, overriding any earlier PTR
-  # denial for that IP), so CDN edge IPs whose PTR name is not under an
-  # allowed domain are not blocked; the PTR gate applies only to IPs
-  # that no allowlisted hostname ever resolved to.
   # Loopback/private/link-local ranges always pass. Raw-IP decisions are
   # cached on disk at $XDG_CACHE_HOME/mocktail/domain_allowlist_cache.json
   # (0600) for faster launches; the cache is discarded and overwritten
   # whenever the active Roblox payload version changes (after an update).
   # Empty (default) disables the restriction.
   allowed_domains: "roblox.com,google.com,cloudflare.com,discord.com,discordapp.com"
-  # Optional comma-separated list of IPv4 DNS resolvers (default:
-  # "8.8.8.8,8.8.4.4,1.1.1.1"), used ONLY for the raw-IP PTR and forward-verify
-  # lookups described above (UDP/53, tried in order, 1500 ms each). Set this to
-  # your own or a regional resolver, e.g. your router or ISP DNS. The game's
-  # normal hostname resolution still uses the system resolver; this list only
-  # backs the allowlist's raw-IP checks.
-  # dns_resolver: "8.8.8.8,8.8.4.4,1.1.1.1"
+  dns_resolver: "8.8.8.8,8.8.4.4,1.1.1.1"
   # Optional fixed HTTP/SOCKS5 proxy. Uncomment host and port together.
   # The host must not contain a scheme such as http://.
   # proxy_scheme: http
