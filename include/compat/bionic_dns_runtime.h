@@ -34,6 +34,14 @@ bool IsBlockedCrashReportUploadHost(std::string_view host) noexcept;
 int BionicGetAddressInfo(const char* node, const char* service,
                          const BionicAddressInfo* hints,
                          BionicAddressInfo** result) noexcept;
+// When the engine resolves an allowlisted hostname, every IPv4 address it
+// returns is pre-authorized in the raw-IP domain cache (overriding any
+// stale cached PTR denial for that IP), so the connect() wrapper does not
+// false-block CDN edge IPs whose PTR name is not under an allowed domain.
+void MarkResolvedAddressesAllowed(const char* host,
+                                  const BionicAddressInfo* info) noexcept;
+void MarkHostentAddressesAllowed(const char* host,
+                                 const hostent* result) noexcept;
 void BionicFreeAddressInfo(BionicAddressInfo* info) noexcept;
 hostent* BionicGetHostByName(const char* name) noexcept;
 
