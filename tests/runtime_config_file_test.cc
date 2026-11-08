@@ -219,6 +219,9 @@ TEST(RuntimeConfigBootstrapTest,
            "# Reserved for desktop update integrations. `mocktail_updater` "
            "itself never\n  # launches another process after changing the "
            "active payload.\n  launch_after_update: false",
+           "# Optional comma-separated domain allowlist for the GAME's "
+           "connections",
+           "# allowed_domains: \"roblox.com,google.com,cloudflare.com,discord.com\"",
        }) {
     EXPECT_NE(defaults.find(documented_setting), std::string::npos)
         << documented_setting;
@@ -623,6 +626,36 @@ network:
   ASSERT_TRUE(loaded) << loaded.error;
   EXPECT_TRUE(loaded.config.use_system_proxy());
   EXPECT_FALSE(loaded.config.network_proxy().has_value());
+}
+
+TEST(RuntimeConfigFileTest, ParsesGameDomainAllowlist) {
+  TemporaryDirectory temporary;
+  const std::filesystem::path path = temporary.Write(R"yaml(
+version: 1
+network:
+  allowed_domains: "roblox.com, Google.COM., cloudflare.com,discord.com"
+)yaml");
+  const RuntimeConfigLoadResult loaded =
+      LoadRuntimeConfig(MapEnvironment(), path);
+  ASSERT_TRUE(loaded) << loaded.error;
+  const std::vector<std::string> expected = {
+      "roblox.com", "google.com", "cloudflare.com", "discord.com"};
+  EXPECT_EQ(loaded.config.allowed_domains(), expected);
+
+  const std::filesystem::path invalid = temporary.Write(R"yaml(
+version: 1
+network:
+  allowed_domains: "roblox.com,bad_domain"
+)yaml");
+  const RuntimeConfigLoadResult bad = LoadRuntimeConfig(MapEnvironment(), invalid);
+  EXPECT_FALSE(bad);
+  EXPECT_NE(bad.error.find("network.allowed_domains must be"), std::string::npos);
+
+  // Absent key: no restriction.
+  const std::filesystem::path empty = temporary.Write("version: 1\n");
+  const RuntimeConfigLoadResult off = LoadRuntimeConfig(MapEnvironment(), empty);
+  ASSERT_TRUE(off) << off.error;
+  EXPECT_TRUE(off.config.allowed_domains().empty());
 }
 
 TEST(RuntimeConfigFileTest, ExportsProxyVariablesOnlyWhenConfigured) {

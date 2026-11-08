@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "runtime/device_profile.h"
+#include "runtime/domain_allowlist.h"
 #include "runtime/environment.h"
 #include "runtime/frame_rate_policy.h"
 #include "runtime/performance_policy.h"
@@ -146,6 +147,12 @@ class RuntimeConfig {
   }
   bool ca_bundle_valid() const { return ca_bundle_valid_; }
   bool use_system_proxy() const { return use_system_proxy_; }
+  // Game-side domain allowlist (empty = no restriction). When non-empty,
+  // the engine may only resolve/connect to these domains and subdomains.
+  const std::vector<std::string>& allowed_domains() const {
+    return allowed_domains_;
+  }
+  bool allowed_domains_valid() const { return allowed_domains_valid_; }
   bool fleasion_enabled() const { return fleasion_enabled_; }
   bool fleasion_valid() const { return fleasion_valid_; }
   const std::string& fleasion_proxy_mode() const { return fleasion_proxy_mode_; }
@@ -189,6 +196,8 @@ class RuntimeConfig {
   std::string audio_input_device_ = "default";
   bool audio_input_device_valid_ = true;
   bool use_system_proxy_ = false;
+  std::vector<std::string> allowed_domains_;
+  bool allowed_domains_valid_ = true;
   bool fleasion_enabled_ = false;
   bool fleasion_valid_ = true;
   std::string fleasion_proxy_mode_ = "env";

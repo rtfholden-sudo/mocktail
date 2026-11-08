@@ -38,6 +38,8 @@ TEST(RuntimeConfigTest, UsesSupportedDefaults) {
 
   EXPECT_FALSE(config.headless());
   EXPECT_FALSE(config.logs_enabled());
+  EXPECT_TRUE(config.allowed_domains().empty());
+  EXPECT_TRUE(config.allowed_domains_valid());
   EXPECT_EQ(config.roblox_library_path(), "rbx_bin/libroblox.so");
   EXPECT_EQ(config.graphics_backend(), GraphicsBackend::kVulkan);
   EXPECT_EQ(config.graphics_backend_name(), "direct-vulkan");
@@ -96,6 +98,7 @@ TEST(RuntimeConfigTest, ReadsTypedRuntimeValues) {
   const MapEnvironment environment({
       {"MOCKTAIL_HEADLESS", "1"},
       {"MOCKTAIL_LOGS", "1"},
+      {"MOCKTAIL_ALLOWED_DOMAINS", "roblox.com,google.com"},
       {"ROBLOX_LIB_PATH", "/tmp/libroblox.so"},
       {"MOCKTAIL_GRAPHICS_BACKEND", "vulkan"},
       {"MOCKTAIL_WIN_WIDTH", "1920"},
@@ -127,6 +130,8 @@ TEST(RuntimeConfigTest, ReadsTypedRuntimeValues) {
 
   EXPECT_TRUE(config.headless());
   EXPECT_TRUE(config.logs_enabled());
+  EXPECT_EQ(config.allowed_domains(),
+            (std::vector<std::string>{"roblox.com", "google.com"}));
   EXPECT_EQ(config.roblox_library_path(), "/tmp/libroblox.so");
   EXPECT_EQ(config.graphics_backend(), GraphicsBackend::kVulkan);
   EXPECT_EQ(config.window().width, 1920);
@@ -367,6 +372,10 @@ TEST(RuntimeConfigTest, MarksUnknownDeviceProfileInvalid) {
 }
 
 TEST(RuntimeConfigTest, RetainsLegacyBooleanSemantics) {
+  const MapEnvironment bad_domains({{"MOCKTAIL_ALLOWED_DOMAINS", "bad_domain!"}});
+  const RuntimeConfig bad_config = RuntimeConfig::FromEnvironment(bad_domains);
+  EXPECT_FALSE(bad_config.allowed_domains_valid());
+
   const MapEnvironment false_text({{"MOCKTAIL_HEADLESS", "false"}});
   const MapEnvironment zero({{"MOCKTAIL_HEADLESS", "0"}});
 

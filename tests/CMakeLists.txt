@@ -265,6 +265,12 @@ target_link_libraries(render_resolution_test PRIVATE
   GTest::gtest_main
 )
 
+add_executable(domain_allowlist_test domain_allowlist_test.cc)
+target_link_libraries(domain_allowlist_test PRIVATE
+  Mocktail::Runtime
+  GTest::gtest_main
+)
+
 add_executable(memory_limit_test memory_limit_test.cc)
 target_link_libraries(memory_limit_test PRIVATE
   Mocktail::Runtime
@@ -1031,6 +1037,7 @@ gtest_discover_tests(game_mode_link_namespace_test PROPERTIES
 gtest_discover_tests(host_os_test)
 gtest_discover_tests(host_hardware_test)
 gtest_discover_tests(render_resolution_test)
+gtest_discover_tests(domain_allowlist_test)
 gtest_discover_tests(memory_limit_test)
 gtest_discover_tests(runtime_paths_test)
 gtest_discover_tests(single_instance_lock_test)
