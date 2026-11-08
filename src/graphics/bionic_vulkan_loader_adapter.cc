@@ -199,6 +199,7 @@ struct AdapterState {
   std::atomic<NoteVulkanCallEndFn> note_vulkan_call_end{nullptr};
   std::atomic<NoteSurfaceOutOfDateFn> note_surface_out_of_date{nullptr};
   bool extent_translation_logged = false;
+  bool scale_extent_logged = false;
   bool present_policy_logged = false;
   bool initialized = false;
 };
@@ -2193,34 +2194,61 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
   }
   const VkResult result =
       host_capabilities(physical_device, surface, capabilities);
-  if (result != VK_SUCCESS ||
-      (capabilities->currentExtent.width != UINT32_MAX &&
-       capabilities->currentExtent.height != UINT32_MAX)) {
-    return result;
-  }
+  if (result == VK_SUCCESS &&
+      (capabilities->currentExtent.width == UINT32_MAX ||
+       capabilities->currentExtent.height == UINT32_MAX)) {
+    const WindowDimensionFn window_width =
+        ResolveProcessFunction<WindowDimensionFn>("mocktail_window_width");
+    const WindowDimensionFn window_height =
+        ResolveProcessFunction<WindowDimensionFn>("mocktail_window_height");
+    if (window_width != nullptr && window_height != nullptr &&
+        window_width() > 0 && window_height() > 0) {
+      capabilities->currentExtent.width = std::clamp(
+          static_cast<std::uint32_t>(window_width()),
+          capabilities->minImageExtent.width,
+          capabilities->maxImageExtent.width);
+      capabilities->currentExtent.height = std::clamp(
+          static_cast<std::uint32_t>(window_height()),
+          capabilities->minImageExtent.height,
+          capabilities->maxImageExtent.height);
 
-  const WindowDimensionFn window_width =
-      ResolveProcessFunction<WindowDimensionFn>("mocktail_window_width");
-  const WindowDimensionFn window_height =
-      ResolveProcessFunction<WindowDimensionFn>("mocktail_window_height");
-  if (window_width == nullptr || window_height == nullptr ||
-      window_width() <= 0 || window_height() <= 0) {
-    return result;
+      AdapterState& state = State();
+      std::lock_guard<std::mutex> lock(state.mutex);
+      if (!state.extent_translation_logged) {
+        state.extent_translation_logged = true;
+        std::fprintf(
+            stderr, "  [vulkan] Android currentExtent translated to %ux%u\n",
+            capabilities->currentExtent.width, capabilities->currentExtent.height);
+      }
+    }
   }
-  capabilities->currentExtent.width = std::clamp(
-      static_cast<std::uint32_t>(window_width()),
-      capabilities->minImageExtent.width, capabilities->maxImageExtent.width);
-  capabilities->currentExtent.height = std::clamp(
-      static_cast<std::uint32_t>(window_height()),
-      capabilities->minImageExtent.height, capabilities->maxImageExtent.height);
-
-  AdapterState& state = State();
-  std::lock_guard<std::mutex> lock(state.mutex);
-  if (!state.extent_translation_logged) {
-    state.extent_translation_logged = true;
-    std::fprintf(
-        stderr, "  [vulkan] Android currentExtent translated to %ux%u\n",
-        capabilities->currentExtent.width, capabilities->currentExtent.height);
+  if (result == VK_SUCCESS &&
+      capabilities->currentExtent.width != UINT32_MAX &&
+      capabilities->currentExtent.height != UINT32_MAX) {
+    // Host-side framebuffer scale: report the scaled surface extent so the
+    // game sizes its viewport and swapchain to the clamped framebuffer
+    // instead of the full window (which would crop when the smaller
+    // swapchain is upscaled at present).
+    const double render_scale = mocktail::graphics::CachedRenderScale();
+    if (render_scale > 0.0 && render_scale < 1.0) {
+      const VkExtent2D scaled = mocktail::graphics::ScaleSwapchainExtent(
+          capabilities->currentExtent, render_scale,
+          capabilities->minImageExtent, capabilities->maxImageExtent);
+      if (scaled.width != capabilities->currentExtent.width ||
+          scaled.height != capabilities->currentExtent.height) {
+        capabilities->currentExtent = scaled;
+        AdapterState& state = State();
+        std::lock_guard<std::mutex> lock(state.mutex);
+        if (!state.scale_extent_logged) {
+          state.scale_extent_logged = true;
+          std::fprintf(
+              stderr,
+              "  [vulkan] render_scale=%.2f surface currentExtent -> %ux%u "
+              "(viewport matches clamped swapchain)\n",
+              render_scale, scaled.width, scaled.height);
+        }
+      }
+    }
   }
   return result;
 }
