@@ -33,7 +33,7 @@ device: pc-windows-11
 # logs) to logs/sessions/<timestamp>.log plus logs/latest.log, and every
 # trace channel is switched on (engine, JNI, window, GL/EGL, FPS, DNS,
 # asset, post-client-settings), so all of it lands in that same log.
-# logs: false
+logs: false
 
 runtime:
   # Boolean (default: false): start without a visible SDL window.
@@ -48,7 +48,7 @@ auth:
 appearance:
   # String (default: roblox): use Roblox's saved account theme. Supported
   # overrides: dark, light, or system (follow the desktop color scheme).
-  theme: roblox
+  theme: dark
 
 graphics:
   # String (default: direct-vulkan): graphics backend. Use opengl on hardware
@@ -61,7 +61,7 @@ graphics:
   # DFIntTaskSchedulerTargetFps without a whitelist.
   # frame_rate_limit: -1
   # Optional presentation synchronization override: auto, on, or off.
-  # vsync: off
+  vsync: off
 
 performance:
   # Boolean (default: false): pin Roblox's minimum scheduler thread count to
@@ -81,7 +81,7 @@ performance:
   # topology is detected and every physical core otherwise; `all` always
   # uses every physical core; `performance` forces performance cores when
   # detectable. Supported: auto, all, performance.
-  # worker_cores: auto
+  worker_cores: auto
   # Integer MiB (default: 0): hard RAM cap for the Mocktail process tree.
   # 0 disables the cap. cgroup v2 also disables swap; other Linux systems use
   # an RSS+swap watchdog. 6144 is a conservative starting point for 32 GiB RAM.
@@ -116,7 +116,7 @@ integrations:
   discord_rpc:
     # Boolean (default: false): publish Mocktail activity to Discord Desktop.
     # This never signs in to Discord and never reads an account token.
-    enabled: false
+    enabled: true
     # Boolean (default: true): show the current Roblox experience name.
     show_place_name: true
     # Boolean (default: true): show how long the current session has run.
@@ -127,7 +127,7 @@ integrations:
       enabled: true
       # Boolean (default: true): never expose private or reserved joins.
       public_servers_only: true
-      # button_label: Join Server
+      button_label: Join
     # English defaults. Uncomment only the lines you want to customize.
     # text:
     #   browsing: Browsing experiences
@@ -165,10 +165,10 @@ window:
   # lower window.width/window.height instead: that directly shrinks the
   # real framebuffer. Set logs: true to check latest.log for whether the
   # DRS flag was applied.
-  # render_scale: 1.0
+  render_scale: 0.7
   # Boolean (default: false): enable Roblox's FXAA post-process (MSAA off,
   # post-processing on). Recommended together with render_scale < 1.
-  # fxaa: false
+  fxaa: false
 
 network:
   # Boolean (default: false): follow the host HTTP/SOCKS5 proxy and
