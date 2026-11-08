@@ -1,4 +1,5 @@
 #include "runtime/roblox_input_router.h"
+#include "runtime/render_resolution.h"
 
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_scancode.h>
@@ -34,8 +35,17 @@ RobloxInputDispatchResult Result(RobloxInputDispatchState state,
 
 platform::SurfaceCoordinateTransform CoordinateTransform(
     const RobloxInputViewport& viewport) {
-  return {viewport.logical_width, viewport.logical_height, viewport.pixel_width,
-          viewport.pixel_height, viewport.density_scale};
+  // When the host clamps the framebuffer (window.render_scale < 1 on the
+  // Vulkan backend), the game-visible window is scaled by the same factor,
+  // so guest (game) pixel coordinates must shrink accordingly. Host logical
+  // sizes stay real; only the guest pixel space is scaled.
+  const double scale = mocktail::runtime::HostRenderScale();
+  const auto guest_pixels = [scale](int32_t pixels) {
+    return static_cast<int32_t>(std::lround(pixels * scale));
+  };
+  return {viewport.logical_width, viewport.logical_height,
+          guest_pixels(viewport.pixel_width),
+          guest_pixels(viewport.pixel_height), viewport.density_scale};
 }
 
 }  // namespace
