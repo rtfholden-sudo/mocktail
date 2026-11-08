@@ -153,6 +153,13 @@ class RuntimeConfig {
     return allowed_domains_;
   }
   bool allowed_domains_valid() const { return allowed_domains_valid_; }
+  // IPv4 DNS resolvers used ONLY for the allowlist's raw-IP PTR/forward
+  // lookups (UDP/53). Defaults to the public resolvers 8.8.8.8, 8.8.4.4,
+  // 1.1.1.1; configurable via network.dns_resolver / MOCKTAIL_PTR_RESOLVERS.
+  const std::vector<std::string>& dns_resolvers() const {
+    return dns_resolvers_;
+  }
+  bool dns_resolvers_valid() const { return dns_resolvers_valid_; }
   bool fleasion_enabled() const { return fleasion_enabled_; }
   bool fleasion_valid() const { return fleasion_valid_; }
   const std::string& fleasion_proxy_mode() const { return fleasion_proxy_mode_; }
@@ -198,6 +205,8 @@ class RuntimeConfig {
   bool use_system_proxy_ = false;
   std::vector<std::string> allowed_domains_;
   bool allowed_domains_valid_ = true;
+  std::vector<std::string> dns_resolvers_ = {"8.8.8.8", "8.8.4.4", "1.1.1.1"};
+  bool dns_resolvers_valid_ = true;
   bool fleasion_enabled_ = false;
   bool fleasion_valid_ = true;
   std::string fleasion_proxy_mode_ = "env";

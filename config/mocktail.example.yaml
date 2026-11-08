@@ -179,7 +179,7 @@ network:
   # the engine may only resolve and connect to these domains and their
   # subdomains; every other host is refused with EAI_NONAME at DNS time and
   # logged as "[dns] blocked". Raw IPv4 literals (hard-coded IPs) are
-  # reverse-resolved (PTR) via 8.8.8.8/8.8.4.4/1.1.1.1 and allowed only when
+  # reverse-resolved (PTR) via the dns_resolver list below and allowed only when
   # a PTR name passes this list and forward-verifies back to the IP; direct
   # connect() calls to public IPs are gated the same way ("[net] blocked").
   # IPs returned when resolving an allowlisted hostname are trusted
@@ -193,6 +193,13 @@ network:
   # whenever the active Roblox payload version changes (after an update).
   # Empty (default) disables the restriction.
   allowed_domains: "roblox.com,google.com,cloudflare.com,discord.com,discordapp.com"
+  # Optional comma-separated list of IPv4 DNS resolvers (default:
+  # "8.8.8.8,8.8.4.4,1.1.1.1"), used ONLY for the raw-IP PTR and forward-verify
+  # lookups described above (UDP/53, tried in order, 1500 ms each). Set this to
+  # your own or a regional resolver, e.g. your router or ISP DNS. The game's
+  # normal hostname resolution still uses the system resolver; this list only
+  # backs the allowlist's raw-IP checks.
+  # dns_resolver: "8.8.8.8,8.8.4.4,1.1.1.1"
   # Optional fixed HTTP/SOCKS5 proxy. Uncomment host and port together.
   # The host must not contain a scheme such as http://.
   # proxy_scheme: http

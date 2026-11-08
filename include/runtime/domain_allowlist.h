@@ -75,6 +75,20 @@ RawIpDecision DecideRawIp(const std::vector<std::string>& ptr_names,
 // Default public resolvers used for raw-IP reverse/forward lookups.
 std::vector<std::string> DefaultPtrResolvers();
 
+// Parses a comma-separated list of IPv4 DNS resolvers (e.g.
+// "8.8.8.8,1.1.1.1"). Entries are trimmed; entries that are not dotted-quad
+// IPv4 literals are dropped, and duplicates are removed. An empty input
+// yields an empty list.
+std::vector<std::string> ParsePtrResolverList(std::string_view comma_list);
+
+// True when the comma-separated list is non-empty and every (trimmed) entry
+// is a valid dotted-quad IPv4 literal.
+bool IsValidPtrResolverList(std::string_view comma_list);
+
+// Joins resolvers back into a comma-separated string (used to export the
+// policy through the environment).
+std::string JoinPtrResolvers(const std::vector<std::string>& resolvers);
+
 // Resolves the PTR names of `address` by querying the given resolvers over
 // UDP/53 (tried in order, `timeout_ms` each). Network I/O; returns nullopt
 // when no resolver answered.

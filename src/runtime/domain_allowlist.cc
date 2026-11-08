@@ -382,26 +382,82 @@ RawIpDecision DecideRawIp(const std::vector<std::string>& ptr_names,
   return RawIpDecision::kBlock;
 }
 
+namespace {
+
+std::string TrimWhitespace(std::string_view text) {
+  const auto first = text.find_first_not_of(" \t\r\n");
+  if (first == std::string_view::npos) {
+    return {};
+  }
+  const auto last = text.find_last_not_of(" \t\r\n");
+  return std::string(text.substr(first, last - first + 1));
+}
+
+}  // namespace
+
+std::vector<std::string> ParsePtrResolverList(std::string_view comma_list) {
+  std::vector<std::string> resolvers;
+  std::size_t start = 0;
+  while (start <= comma_list.size()) {
+    const std::size_t comma = comma_list.find(',', start);
+    const std::string entry =
+        comma == std::string_view::npos
+            ? TrimWhitespace(comma_list.substr(start))
+            : TrimWhitespace(comma_list.substr(start, comma - start));
+    std::uint32_t ignored = 0;
+    if (ParseIpv4(entry, &ignored) &&
+        std::find(resolvers.begin(), resolvers.end(), entry) ==
+            resolvers.end()) {
+      resolvers.push_back(entry);
+    }
+    if (comma == std::string_view::npos) {
+      break;
+    }
+    start = comma + 1;
+  }
+  return resolvers;
+}
+
+bool IsValidPtrResolverList(std::string_view comma_list) {
+  if (comma_list.empty()) {
+    return false;
+  }
+  std::size_t start = 0;
+  bool any = false;
+  while (start <= comma_list.size()) {
+    const std::size_t comma = comma_list.find(',', start);
+    const std::string entry =
+        comma == std::string_view::npos
+            ? TrimWhitespace(comma_list.substr(start))
+            : TrimWhitespace(comma_list.substr(start, comma - start));
+    std::uint32_t ignored = 0;
+    if (entry.empty() || !ParseIpv4(entry, &ignored)) {
+      return false;
+    }
+    any = true;
+    if (comma == std::string_view::npos) {
+      break;
+    }
+    start = comma + 1;
+  }
+  return any;
+}
+
+std::string JoinPtrResolvers(const std::vector<std::string>& resolvers) {
+  std::string joined;
+  for (const std::string& resolver : resolvers) {
+    if (!joined.empty()) {
+      joined.push_back(',');
+    }
+    joined += resolver;
+  }
+  return joined;
+}
+
 std::vector<std::string> DefaultPtrResolvers() {
   const char* override_resolvers = std::getenv("MOCKTAIL_PTR_RESOLVERS");
   if (override_resolvers != nullptr && override_resolvers[0] != '\0') {
-    std::vector<std::string> parsed;
-    std::size_t start = 0;
-    const std::string raw(override_resolvers);
-    while (start <= raw.size()) {
-      const std::size_t comma = raw.find(',', start);
-      const std::string entry =
-          comma == std::string::npos ? raw.substr(start)
-                                     : raw.substr(start, comma - start);
-      std::uint32_t ignored = 0;
-      if (ParseIpv4(entry, &ignored)) {
-        parsed.push_back(entry);
-      }
-      if (comma == std::string::npos) {
-        break;
-      }
-      start = comma + 1;
-    }
+    std::vector<std::string> parsed = ParsePtrResolverList(override_resolvers);
     if (!parsed.empty()) {
       return parsed;
     }

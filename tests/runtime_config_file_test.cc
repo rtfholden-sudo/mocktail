@@ -223,6 +223,8 @@ TEST(RuntimeConfigBootstrapTest,
            "connections",
            "allowed_domains: \"roblox.com,google.com,cloudflare.com,discord.com,discordapp.com\"",
            "# cached on disk at $XDG_CACHE_HOME/mocktail/domain_allowlist_cache.json",
+           "# dns_resolver: \"8.8.8.8,8.8.4.4,1.1.1.1\"",
+           "# reverse-resolved (PTR) via the dns_resolver list below",
        }) {
     EXPECT_NE(defaults.find(documented_setting), std::string::npos)
         << documented_setting;
@@ -657,6 +659,83 @@ network:
   const RuntimeConfigLoadResult off = LoadRuntimeConfig(MapEnvironment(), empty);
   ASSERT_TRUE(off) << off.error;
   EXPECT_TRUE(off.config.allowed_domains().empty());
+}
+
+TEST(RuntimeConfigFileTest, ParsesDnsResolverList) {
+  TemporaryDirectory temporary;
+  const std::filesystem::path path = temporary.Write(R"yaml(
+version: 1
+network:
+  dns_resolver: "9.9.9.9, 149.112.112.112 ,1.0.0.1"
+)yaml");
+  const RuntimeConfigLoadResult loaded =
+      LoadRuntimeConfig(MapEnvironment(), path);
+  ASSERT_TRUE(loaded) << loaded.error;
+  EXPECT_TRUE(loaded.config.dns_resolvers_valid());
+  const std::vector<std::string> expected = {"9.9.9.9", "149.112.112.112",
+                                             "1.0.0.1"};
+  EXPECT_EQ(loaded.config.dns_resolvers(), expected);
+
+  const std::filesystem::path invalid = temporary.Write(R"yaml(
+version: 1
+network:
+  dns_resolver: "8.8.8.8,not-an-ip"
+)yaml");
+  const RuntimeConfigLoadResult bad = LoadRuntimeConfig(MapEnvironment(), invalid);
+  EXPECT_FALSE(bad);
+  EXPECT_NE(bad.error.find("network.dns_resolver must be"), std::string::npos);
+
+  const std::filesystem::path empty_value = temporary.Write(R"yaml(
+version: 1
+network:
+  dns_resolver: ""
+)yaml");
+  const RuntimeConfigLoadResult empty_bad =
+      LoadRuntimeConfig(MapEnvironment(), empty_value);
+  EXPECT_FALSE(empty_bad);
+  EXPECT_NE(empty_bad.error.find("network.dns_resolver must be"),
+            std::string::npos);
+
+  // Absent key: the default public resolvers.
+  const std::filesystem::path absent = temporary.Write("version: 1\n");
+  const RuntimeConfigLoadResult defaults =
+      LoadRuntimeConfig(MapEnvironment(), absent);
+  ASSERT_TRUE(defaults) << defaults.error;
+  EXPECT_TRUE(defaults.config.dns_resolvers_valid());
+  EXPECT_EQ(defaults.config.dns_resolvers(),
+            (std::vector<std::string>{"8.8.8.8", "8.8.4.4", "1.1.1.1"}));
+}
+
+TEST(RuntimeConfigFileTest, EnvironmentDnsResolverWinsOverYaml) {
+  TemporaryDirectory temporary;
+  const std::filesystem::path path = temporary.Write(R"yaml(
+version: 1
+network:
+  dns_resolver: "9.9.9.9"
+)yaml");
+  const RuntimeConfigLoadResult loaded = LoadRuntimeConfig(
+      MapEnvironment({{"MOCKTAIL_PTR_RESOLVERS", "1.0.0.1,8.8.8.8"}}), path);
+  ASSERT_TRUE(loaded) << loaded.error;
+  EXPECT_EQ(loaded.config.dns_resolvers(),
+            (std::vector<std::string>{"1.0.0.1", "8.8.8.8"}));
+}
+
+TEST(RuntimeConfigFileTest, ExportsDnsResolverEnvironment) {
+  unsetenv("MOCKTAIL_PTR_RESOLVERS");
+  TemporaryDirectory temporary;
+  const std::filesystem::path path = temporary.Write(R"yaml(
+version: 1
+network:
+  dns_resolver: "9.9.9.9,1.0.0.1"
+)yaml");
+  const RuntimeConfigLoadResult loaded =
+      LoadRuntimeConfig(MapEnvironment(), path);
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(ExportRuntimeConfigEnvironment(loaded.config));
+  const char* exported = std::getenv("MOCKTAIL_PTR_RESOLVERS");
+  ASSERT_NE(exported, nullptr);
+  EXPECT_EQ(std::string(exported), "9.9.9.9,1.0.0.1");
+  unsetenv("MOCKTAIL_PTR_RESOLVERS");
 }
 
 TEST(RuntimeConfigFileTest, ExportsProxyVariablesOnlyWhenConfigured) {
