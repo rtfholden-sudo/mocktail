@@ -52,6 +52,9 @@
         {
           "type": "archive",
           "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.4.10/SDL3-3.4.10.tar.gz",
+          "mirror-urls": [
+            "https://libsdl.org/release/SDL3-3.4.10.tar.gz"
+          ],
           "sha256": "12b34280415ec8418c864408b93d008a20a6530687ee613d60bfbd20411f2785"
         }
       ]
@@ -69,6 +72,9 @@
         {
           "type": "archive",
           "url": "https://github.com/libsdl-org/SDL_ttf/releases/download/release-3.2.2/SDL3_ttf-3.2.2.tar.gz",
+          "mirror-urls": [
+            "https://www.libsdl.org/projects/SDL_ttf/release/SDL3_ttf-3.2.2.tar.gz"
+          ],
           "sha256": "63547d58d0185c833213885b635a2c0548201cc8f301e6587c0be1a67e1e045d"
         }
       ]
@@ -117,6 +123,9 @@
         {
           "type": "archive",
           "url": "https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.xz",
+          "mirror-urls": [
+            "https://zlib.net/zlib-1.3.2.tar.xz"
+          ],
           "sha256": "d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3"
         }
       ]
