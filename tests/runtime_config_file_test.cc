@@ -131,6 +131,8 @@ TEST(RuntimeConfigBootstrapTest,
            "# Presets: pc-windows-11, mobile-pixel-7, "
            "console-ps5.\n# Use the mapping below for a custom "
            "profile.\ndevice: pc-windows-11",
+           "# Boolean (default: false): universal disk logging. When true, every log\n# type is written to disk under $XDG_STATE_HOME/mocktail/logs",
+           "# logs: false",
            "# Boolean (default: false): start without a visible SDL "
            "window.\n  headless: false",
            "# String (default: roblox): use Roblox's saved account theme. "
@@ -194,6 +196,10 @@ TEST(RuntimeConfigBootstrapTest,
            "# window at present; pair with fxaa: true to soften the upscale. Unlike\n  "
            "# render_resolution (which only changes the resolution the game is told\n  "
            "# about), this lowers the real GPU workload - the lever to use on an iGPU.\n  "
+           "# If your Roblox build ignores locally-set flags (2025-09-29 allowlist),\n  "
+           "# lower window.width/window.height instead: that directly shrinks the\n  "
+           "# real framebuffer. Set logs: true to check latest.log for whether the\n  "
+           "# DRS flag was applied.\n  "
            "# render_scale: 1.0",
            "# Boolean (default: false): enable Roblox's FXAA post-process (MSAA off,\n  "
            "# post-processing on). Recommended together with render_scale < 1.\n  "
@@ -320,6 +326,25 @@ TEST(RuntimeConfigFileTest, RejectsSymlinkAndOversizedConfiguration) {
   loaded = LoadRuntimeConfig(MapEnvironment(), oversized);
   EXPECT_FALSE(loaded);
   EXPECT_NE(loaded.error.find("no larger than 1 MiB"), std::string::npos);
+}
+
+TEST(RuntimeConfigFileTest, ParsesUniversalDiskLoggingToggle) {
+  TemporaryDirectory temporary;
+  const std::filesystem::path file = temporary.Write("version: 1\nlogs: true\n");
+  const RuntimeConfigLoadResult loaded = LoadRuntimeConfig(MapEnvironment(), file);
+  ASSERT_TRUE(loaded) << loaded.error;
+  EXPECT_TRUE(loaded.config.logs_enabled());
+
+  const std::filesystem::path off = temporary.Write("version: 1\nlogs: false\n");
+  const RuntimeConfigLoadResult disabled =
+      LoadRuntimeConfig(MapEnvironment(), off);
+  ASSERT_TRUE(disabled) << disabled.error;
+  EXPECT_FALSE(disabled.config.logs_enabled());
+
+  const std::filesystem::path invalid = temporary.Write("version: 1\nlogs: maybe\n");
+  const RuntimeConfigLoadResult bad = LoadRuntimeConfig(MapEnvironment(), invalid);
+  EXPECT_FALSE(bad);
+  EXPECT_NE(bad.error.find("logs must be true or false"), std::string::npos);
 }
 
 TEST(RuntimeConfigFileTest, LoadsTypedDesktopAndGraphicsSettings) {

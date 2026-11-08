@@ -819,6 +819,24 @@ int main(int argc, char* argv[]) {
     return EXIT_FAILURE;
   }
   if (command_line.options.mode == mocktail::runtime::CommandMode::kRun &&
+      runtime_config.config.logs_enabled()) {
+    // Universal disk logging: the session log (started below) tees all
+    // process stdout/stderr to disk; these flags turn on every trace
+    // channel so engine/JNI/window/GL/EGL/FPS/DNS/asset output lands in
+    // that same log. MOCKTAIL_TRACE_ALL is expanded by the legacy runtime
+    // into the individual MOCKTAIL_*_TRACE variables at engine init.
+    for (const char* name : {"MOCKTAIL_TRACE_ALL", "MOCKTAIL_TRACE_FPS",
+                             "MOCKTAIL_VERBOSE"}) {
+      if (setenv(name, "1", 1) != 0) {
+        std::cerr << "[FATAL] Cannot enable universal logging trace flags\n";
+        return EXIT_FAILURE;
+      }
+    }
+    std::cout << "  [runtime] universal disk logging enabled "
+                 "(logs="
+              << (paths.logs_root() / "sessions").string() << ")\n";
+  }
+  if (command_line.options.mode == mocktail::runtime::CommandMode::kRun &&
       !environment.HasNonEmpty("MOCKTAIL_NATIVE_SET_DEFAULT_POLICY_FILE") &&
       setenv("MOCKTAIL_NATIVE_SET_DEFAULT_POLICY_FILE", "1", 1) != 0) {
     std::cerr << "[FATAL] Cannot enable Roblox default app-policy file\n";

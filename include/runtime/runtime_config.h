@@ -95,6 +95,10 @@ class RuntimeConfig {
 
   bool headless() const { return headless_; }
   bool use_libsecret() const { return use_libsecret_; }
+  // Universal disk logging: when true, the session log tees all process
+  // output to disk and every trace channel (engine, JNI, window, GL/EGL,
+  // FPS, DNS, asset, post-client-settings) is enabled.
+  bool logs_enabled() const { return logs_; }
   const std::filesystem::path& roblox_library_path() const {
     return roblox_library_path_;
   }
@@ -166,6 +170,7 @@ class RuntimeConfig {
  private:
   bool headless_ = false;
   bool use_libsecret_ = false;
+  bool logs_ = false;
   std::filesystem::path roblox_library_path_ = "rbx_bin/libroblox.so";
   GraphicsBackend graphics_backend_ = GraphicsBackend::kVulkan;
   std::string graphics_backend_name_ = "direct-vulkan";

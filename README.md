@@ -141,6 +141,23 @@ caused by `Color3` errors in the newer SDUI page. An explicit
 }
 ```
 
+Note: since Roblox's FastFlag allowlist (2025-09-29), the client silently
+ignores any flag in `fflags.json` that is not on the current allowlist, so
+this file only works for the handful of allowlisted flags. Mocktail's own
+YAML-driven policies (in `config.yaml`) are injected through the host
+channel instead.
+
+## Universal disk logging
+
+Set `logs: true` at the top level of `config.yaml` to write **every** log
+type to disk under `$XDG_STATE_HOME/mocktail/logs` (inside the Flatpak
+`~/.var/app/space.bigrat.mocktail/state/mocktail/logs/`): the session log
+tees all process stdout/stderr (Mocktail, SDL, engine JNI/Android logs)
+to `logs/sessions/<timestamp>.log` plus a `logs/latest.log` symlink, and
+all trace channels are enabled (engine, JNI, window, GL/EGL, FPS, DNS,
+asset, post-client-settings), so FPS and flag-application lines land in
+the same file. Default is `logs: false`.
+
 ## Hardware tuning
 
 Mocktail detects the host CPU and GPU at startup and records them in
@@ -187,7 +204,12 @@ Mocktail detects the host CPU and GPU at startup and records them in
   window renders at 640x325) and is upscaled to the window at present — a real
   FPS win on an Iris Xe iGPU without shrinking the window.
   `window.fxaa: true` turns on Roblox's FXAA post-process to soften the
-  upscale.
+  upscale. The DRS flag is injected through Mocktail's host client-settings
+  channel; if your Roblox build ignores locally-set flags (the 2025-09-29
+  allowlist), lower `window.width`/`window.height` instead — that directly
+  shrinks the real framebuffer, which is the guaranteed lever on an iGPU.
+  Use `logs: true` to check in `latest.log` whether the DRS flag was
+  applied.
 
 ## Privacy: telemetry is disabled
 
