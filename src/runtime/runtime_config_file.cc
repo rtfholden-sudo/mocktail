@@ -195,6 +195,7 @@ bool ValidateAndMap(const ValueMap& yaml, ValueMap* environment,
       "compatibility.desktop_playability",
       "network.use_system_proxy",
       "network.allowed_domains",
+      "network.dns_resolver",
       "network.proxy_host",
       "network.proxy_port",
       "network.proxy_scheme",
@@ -534,6 +535,16 @@ bool ValidateAndMap(const ValueMap& yaml, ValueMap* environment,
     (*environment)["MOCKTAIL_ALLOWED_DOMAINS"] =
         JoinDomainAllowlist(ParseDomainAllowlist(*allowed_domains));
   }
+  if (const auto dns_resolver = value("network.dns_resolver");
+      dns_resolver.has_value()) {
+    if (!IsValidPtrResolverList(*dns_resolver)) {
+      *error = "network.dns_resolver must be a comma-separated list of IPv4 "
+               "addresses (e.g. \"8.8.8.8,1.1.1.1\")";
+      return false;
+    }
+    (*environment)["MOCKTAIL_PTR_RESOLVERS"] =
+        JoinPtrResolvers(ParsePtrResolverList(*dns_resolver));
+  }
   if (proxy_host.has_value() != proxy_port.has_value() ||
       (proxy_scheme.has_value() && !proxy_host.has_value())) {
     *error =
@@ -854,6 +865,8 @@ RuntimeConfigLoadResult LoadRuntimeConfig(
     result.error = "window high-DPI policy is invalid";
   } else if (!result.config.allowed_domains_valid()) {
     result.error = "network.allowed_domains is invalid";
+  } else if (!result.config.dns_resolvers_valid()) {
+    result.error = "network.dns_resolver is invalid";
   } else if (result.config.vsync_mode() != "auto" &&
              result.config.vsync_mode() != "on" &&
              result.config.vsync_mode() != "off") {
@@ -968,6 +981,12 @@ bool ExportRuntimeConfigEnvironment(const RuntimeConfig& config,
     }
     return false;
   }
+  if (!config.dns_resolvers_valid()) {
+    if (error != nullptr) {
+      *error = "cannot export an invalid DNS resolver list";
+    }
+    return false;
+  }
   const DeviceProfile& device = config.device_profile();
   const bool base_exported =
       SetEnvironmentValue("MOCKTAIL_HEADLESS", config.headless() ? "1" : "0",
@@ -1014,6 +1033,8 @@ bool ExportRuntimeConfigEnvironment(const RuntimeConfig& config,
       SetEnvironmentValue("MOCKTAIL_ALLOWED_DOMAINS",
                           JoinDomainAllowlist(config.allowed_domains()),
                           error) &&
+      SetEnvironmentValue("MOCKTAIL_PTR_RESOLVERS",
+                          JoinPtrResolvers(config.dns_resolvers()), error) &&
       SetEnvironmentValue(
           "MOCKTAIL_TOUCH_MODE",
           config.input_capabilities().touch_enabled ? "on" : "off", error) &&

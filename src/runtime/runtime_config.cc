@@ -352,6 +352,14 @@ RuntimeConfig RuntimeConfig::FromEnvironment(const Environment& environment) {
       environment.GetOr("MOCKTAIL_ALLOWED_DOMAINS", ""));
   config.allowed_domains_valid_ = IsValidDomainAllowlist(
       environment.GetOr("MOCKTAIL_ALLOWED_DOMAINS", ""));
+  if (const auto ptr_resolvers = environment.Get("MOCKTAIL_PTR_RESOLVERS");
+      ptr_resolvers.has_value()) {
+    config.dns_resolvers_valid_ = IsValidPtrResolverList(*ptr_resolvers);
+    config.dns_resolvers_ = ParsePtrResolverList(*ptr_resolvers);
+    if (config.dns_resolvers_.empty()) {
+      config.dns_resolvers_ = {"8.8.8.8", "8.8.4.4", "1.1.1.1"};
+    }
+  }
   config.network_proxy_ = ReadNetworkProxy(environment);
   config.fleasion_enabled_ = ReadBoolean(
       environment, "MOCKTAIL_FLEASION_ENABLED", false, &config.fleasion_valid_);

@@ -11,16 +11,20 @@
 
 using mocktail::runtime::BuildDnsQuery;
 using mocktail::runtime::DecideRawIp;
+using mocktail::runtime::DefaultPtrResolvers;
 using mocktail::runtime::DomainAllowed;
 using mocktail::runtime::Ipv4ToPtrName;
 using mocktail::runtime::IsNumericIpv4;
 using mocktail::runtime::IsValidDomainAllowlist;
 using mocktail::runtime::IsValidDomainEntry;
+using mocktail::runtime::IsValidPtrResolverList;
 using mocktail::runtime::JoinDomainAllowlist;
+using mocktail::runtime::JoinPtrResolvers;
 using mocktail::runtime::ParseDnsAAnswers;
 using mocktail::runtime::ParseDnsPtrAnswers;
 using mocktail::runtime::ParseDomainAllowlist;
 using mocktail::runtime::ParseIpv4;
+using mocktail::runtime::ParsePtrResolverList;
 using mocktail::runtime::RawIpDecision;
 using mocktail::runtime::RawIpDomainCache;
 
@@ -308,6 +312,35 @@ TEST(DomainAllowlistTest, DecideRawIpRequiresAllowlistedPtrAndForwardMatch) {
   EXPECT_EQ(DecideRawIp({}, {addr}, addr, allowed), RawIpDecision::kBlock);
   // Empty allowlist: allow without any lookups.
   EXPECT_EQ(DecideRawIp({}, {}, addr, {}), RawIpDecision::kAllow);
+}
+
+TEST(DomainAllowlistTest, ParsesAndValidatesPtrResolverLists) {
+  const auto parsed = ParsePtrResolverList(" 8.8.8.8 , 1.1.1.1 ,garbage,,8.8.8.8");
+  ASSERT_EQ(parsed.size(), 2U);
+  EXPECT_EQ(parsed[0], "8.8.8.8");
+  EXPECT_EQ(parsed[1], "1.1.1.1");
+  EXPECT_EQ(JoinPtrResolvers(parsed), "8.8.8.8,1.1.1.1");
+  EXPECT_TRUE(IsValidPtrResolverList("8.8.8.8,8.8.4.4,1.1.1.1"));
+  EXPECT_TRUE(IsValidPtrResolverList(" 9.9.9.9 "));
+  EXPECT_FALSE(IsValidPtrResolverList(""));
+  EXPECT_FALSE(IsValidPtrResolverList("8.8.8.8,not-an-ip"));
+  EXPECT_FALSE(IsValidPtrResolverList("999.1.1.1"));
+  EXPECT_FALSE(IsValidPtrResolverList("8.8.8.8,"));
+  EXPECT_TRUE(ParsePtrResolverList("").empty());
+}
+
+TEST(DomainAllowlistTest, DefaultPtrResolversHonorsEnvOverride) {
+  unsetenv("MOCKTAIL_PTR_RESOLVERS");
+  EXPECT_EQ(DefaultPtrResolvers(),
+            (std::vector<std::string>{"8.8.8.8", "8.8.4.4", "1.1.1.1"}));
+  setenv("MOCKTAIL_PTR_RESOLVERS", "9.9.9.9, 149.112.112.112", 1);
+  EXPECT_EQ(DefaultPtrResolvers(),
+            (std::vector<std::string>{"9.9.9.9", "149.112.112.112"}));
+  // An all-invalid override falls back to the defaults.
+  setenv("MOCKTAIL_PTR_RESOLVERS", "not-an-ip", 1);
+  EXPECT_EQ(DefaultPtrResolvers(),
+            (std::vector<std::string>{"8.8.8.8", "8.8.4.4", "1.1.1.1"}));
+  unsetenv("MOCKTAIL_PTR_RESOLVERS");
 }
 
 }  // namespace
