@@ -16,6 +16,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+
 namespace mocktail {
 namespace runtime {
 namespace {
@@ -109,6 +111,20 @@ TEST(RenderResolutionTest, PresetSizesKeepWindowIndependent) {
   const DisplaySize small_native{1366, 768};
   EXPECT_EQ(RenderResolutionSize(RenderResolution::k1080p, small_native).width,
             1920);
+}
+
+TEST(RenderResolutionTest, HostRenderScaleReadsEnvironment) {
+  unsetenv("MOCKTAIL_RENDER_SCALE");
+  EXPECT_DOUBLE_EQ(HostRenderScale(), 1.0);
+  setenv("MOCKTAIL_RENDER_SCALE", "0.25", 1);
+  EXPECT_DOUBLE_EQ(HostRenderScale(), 0.25);
+  setenv("MOCKTAIL_RENDER_SCALE", "0.5", 1);
+  EXPECT_DOUBLE_EQ(HostRenderScale(), 0.5);
+  setenv("MOCKTAIL_RENDER_SCALE", "bogus", 1);
+  EXPECT_DOUBLE_EQ(HostRenderScale(), 1.0);
+  setenv("MOCKTAIL_RENDER_SCALE", "0.1", 1);
+  EXPECT_DOUBLE_EQ(HostRenderScale(), 1.0);
+  unsetenv("MOCKTAIL_RENDER_SCALE");
 }
 
 }  // namespace

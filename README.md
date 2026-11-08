@@ -242,7 +242,11 @@ Mocktail detects the host CPU and GPU at startup and records them in
   renders the full scene into it (without that, the frame would crop when
   upscaled). The presentation engine upscales the smaller swapchain to the
   window, and the engine DRS flag is skipped on that backend so the scale is
-  not applied twice. On non-Vulkan
+  not applied twice. On top of that, the window size the game is told about
+  (`View.getWidth/Height`, display metrics) and the input coordinate space
+  are scaled by the same factor, so the whole game is visible (upscaled)
+  and mouse/touch stay inside the visible area instead of mapping into the
+  cropped-out region. On non-Vulkan
   backends only the flag path exists; if the build ignores it, lower
   `window.width`/`window.height` instead — that directly shrinks the real
   framebuffer, which is the guaranteed lever on an iGPU. Use `logs: true` to

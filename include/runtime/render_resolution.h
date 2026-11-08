@@ -28,6 +28,10 @@ inline constexpr double kMaxRenderScale = 1.0;
 
 bool ParseRenderScale(std::string_view value, double* out);
 
+// window.render_scale as currently exported in MOCKTAIL_RENDER_SCALE; 1.0
+// when unset or invalid. Read live (not cached) so tests can set the env.
+double HostRenderScale();
+
 // Pixel size a preset renders at. kAsk resolves to the native display size.
 DisplaySize RenderResolutionSize(RenderResolution preset,
                                  const DisplaySize& native_display);

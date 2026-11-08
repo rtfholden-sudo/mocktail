@@ -168,6 +168,10 @@ window:
   # is used instead and is ignored by allowlisted builds - then lower
   # window.width/window.height instead: that directly shrinks the real
   # framebuffer. Set logs: true to check latest.log for the applied scale.
+  # When active on the direct-vulkan backend, the game-visible window size
+  # and input coordinates are scaled by the same factor, so the whole game
+  # is shown (upscaled) instead of a cropped section and the mouse stays
+  # inside the visible area.
   render_scale: 0.25
   # Boolean (default: false): enable Roblox's FXAA post-process (MSAA off,
   # post-processing on). Recommended together with render_scale < 1.

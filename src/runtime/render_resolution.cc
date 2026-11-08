@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <cstdlib>
 
 namespace mocktail {
 namespace runtime {
@@ -53,6 +54,15 @@ std::string_view RenderResolutionName(RenderResolution resolution) {
       return "1080p";
   }
   return "ask";
+}
+
+double HostRenderScale() {
+  const char* raw = std::getenv("MOCKTAIL_RENDER_SCALE");
+  double value = kMaxRenderScale;
+  if (raw == nullptr || !ParseRenderScale(raw, &value)) {
+    return kMaxRenderScale;
+  }
+  return value;
 }
 
 bool ParseRenderScale(std::string_view value, double* out) {
