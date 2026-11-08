@@ -1,6 +1,13 @@
 #include "compat/bionic_dns_runtime.h"
 
+#include <arpa/inet.h>
 #include <netdb.h>
+#include <netinet/in.h>
+
+#include <string>
+#include <vector>
+
+#include "runtime/domain_allowlist.h"
 
 #include <array>
 #include <cctype>
@@ -177,6 +184,64 @@ bool IsBlockedCrashReportUploadHost(std::string_view host) noexcept {
   return false;
 }
 
+void MarkResolvedAddressesAllowed(const char* host,
+                                  const BionicAddressInfo* info) noexcept {
+  const char* raw = ::getenv("MOCKTAIL_ALLOWED_DOMAINS");
+  if (raw == nullptr || raw[0] == '\0' || host == nullptr || info == nullptr) {
+    return;
+  }
+  const std::vector<std::string> allowed =
+      mocktail::runtime::ParseDomainAllowlist(raw);
+  if (allowed.empty() || !mocktail::runtime::DomainAllowed(host, allowed)) {
+    return;
+  }
+  for (const BionicAddressInfo* current = info; current != nullptr;
+       current = current->ai_next) {
+    if (current->ai_family != AF_INET || current->ai_addr == nullptr ||
+        current->ai_addrlen < sizeof(struct sockaddr_in)) {
+      continue;
+    }
+    const auto* in =
+        reinterpret_cast<const struct sockaddr_in*>(current->ai_addr);
+    const std::uint32_t address = ::ntohl(in->sin_addr.s_addr);
+    bool cached = false;
+    // A fresh resolution from an allowlisted hostname is stronger evidence
+    // than an earlier PTR denial (e.g. a stale `false` persisted in the
+    // on-disk cache by a previous launch), so overwrite false entries.
+    if (!mocktail::runtime::GlobalRawIpDomainCache().Get(address, &cached) ||
+        !cached) {
+      mocktail::runtime::GlobalRawIpDomainCache().Put(address, true);
+    }
+  }
+}
+
+void MarkHostentAddressesAllowed(const char* host,
+                                 const hostent* result) noexcept {
+  const char* raw = ::getenv("MOCKTAIL_ALLOWED_DOMAINS");
+  if (raw == nullptr || raw[0] == '\0' || host == nullptr || result == nullptr ||
+      result->h_addr_list == nullptr) {
+    return;
+  }
+  const std::vector<std::string> allowed =
+      mocktail::runtime::ParseDomainAllowlist(raw);
+  if (allowed.empty() || !mocktail::runtime::DomainAllowed(host, allowed)) {
+    return;
+  }
+  for (char** address = result->h_addr_list; *address != nullptr; ++address) {
+    if (result->h_length != static_cast<int>(sizeof(std::uint32_t))) {
+      continue;
+    }
+    std::uint32_t decoded = 0;
+    std::memcpy(&decoded, *address, sizeof(decoded));
+    const std::uint32_t host_order = ::ntohl(decoded);
+    bool cached = false;
+    if (!mocktail::runtime::GlobalRawIpDomainCache().Get(host_order, &cached) ||
+        !cached) {
+      mocktail::runtime::GlobalRawIpDomainCache().Put(host_order, true);
+    }
+  }
+}
+
 int BionicGetAddressInfo(const char* node, const char* service,
                          const BionicAddressInfo* hints,
                          BionicAddressInfo** result) noexcept {
@@ -197,7 +262,11 @@ int BionicGetAddressInfo(const char* node, const char* service,
   }
   const bool copied = CopyHostAddressInfo(host_result, result);
   ::freeaddrinfo(host_result);
-  return copied ? 0 : kBionicAddressInfoMemory;
+  if (copied) {
+    MarkResolvedAddressesAllowed(node, *result);
+    return 0;
+  }
+  return kBionicAddressInfoMemory;
 }
 
 void BionicFreeAddressInfo(BionicAddressInfo* info) noexcept {
@@ -215,7 +284,11 @@ hostent* BionicGetHostByName(const char* name) noexcept {
     h_errno = HOST_NOT_FOUND;
     return nullptr;
   }
-  return ::gethostbyname(name);
+  hostent* result = ::gethostbyname(name);
+  if (result != nullptr) {
+    MarkHostentAddressesAllowed(name, result);
+  }
+  return result;
 }
 
 }  // namespace compat
