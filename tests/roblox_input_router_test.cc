@@ -6,8 +6,6 @@
 #include <SDL3/SDL_scancode.h>
 #include <gtest/gtest.h>
 
-#include <cstdlib>
-
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -693,26 +691,6 @@ TEST_F(RobloxInputRouterTest, WindowFocusLossReleasesFocusedTextbox) {
   EXPECT_EQ(probe_.text_operations, (std::vector<std::string>{"handle"}));
   const auto text = router_.HandleEvent(Event(platform::TextInputEvent{"x"}));
   EXPECT_EQ(text.state, RobloxInputDispatchState::kIgnoredUnsupported);
-}
-
-TEST_F(RobloxInputRouterTest, ScalesGuestCoordinatesWhenRenderScaleActive) {
-  // Host framebuffer scale 0.25: the game-visible window is 640x360 guest
-  // pixels for a 2560x1440-pixel (density 2) host window, so host logical
-  // motion (400, 240) maps to guest (100, 60).
-  setenv("MOCKTAIL_RENDER_SCALE", "0.25", 1);
-  ASSERT_TRUE(router_.HandleEvent(Event(platform::MouseMotionEvent{
-                             400.0f, 240.0f, 1.0f, 2.0f, 0}))
-                  .dispatched());
-  ASSERT_EQ(probe_.mouse_moves.size(), 1U);
-  EXPECT_FLOAT_EQ(probe_.mouse_moves[0].x, 100.0f);
-  EXPECT_FLOAT_EQ(probe_.mouse_moves[0].y, 60.0f);
-  unsetenv("MOCKTAIL_RENDER_SCALE");
-  ASSERT_TRUE(router_.HandleEvent(Event(platform::MouseMotionEvent{
-                             400.0f, 240.0f, 1.0f, 2.0f, 0}))
-                  .dispatched());
-  ASSERT_EQ(probe_.mouse_moves.size(), 2U);
-  EXPECT_FLOAT_EQ(probe_.mouse_moves[1].x, 400.0f);
-  EXPECT_FLOAT_EQ(probe_.mouse_moves[1].y, 240.0f);
 }
 
 TEST_F(RobloxInputRouterTest, DeactivatePreventsAllLaterNativeCalls) {

@@ -82,5 +82,39 @@ VkExtent2D ScaleSwapchainExtent(VkExtent2D requested, double scale,
                     scale)};
 }
 
+void ScaleRect2D(VkRect2D* rect, double scale) {
+  if (rect == nullptr || !(scale > 0.0) || scale >= 1.0) {
+    return;
+  }
+  rect->offset.x = static_cast<std::int32_t>(rect->offset.x * scale);
+  rect->offset.y = static_cast<std::int32_t>(rect->offset.y * scale);
+  rect->extent.width =
+      static_cast<std::uint32_t>(rect->extent.width * scale);
+  rect->extent.height =
+      static_cast<std::uint32_t>(rect->extent.height * scale);
+}
+
+void ScaleViewports(VkViewport* viewports, std::uint32_t count,
+                    double scale) {
+  if (viewports == nullptr || !(scale > 0.0) || scale >= 1.0) {
+    return;
+  }
+  for (std::uint32_t i = 0; i < count; ++i) {
+    viewports[i].x *= static_cast<float>(scale);
+    viewports[i].y *= static_cast<float>(scale);
+    viewports[i].width *= static_cast<float>(scale);
+    viewports[i].height *= static_cast<float>(scale);
+  }
+}
+
+void ScaleScissors(VkRect2D* scissors, std::uint32_t count, double scale) {
+  if (scissors == nullptr) {
+    return;
+  }
+  for (std::uint32_t i = 0; i < count; ++i) {
+    ScaleRect2D(&scissors[i], scale);
+  }
+}
+
 } // namespace graphics
 } // namespace mocktail

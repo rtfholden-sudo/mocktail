@@ -89,6 +89,39 @@ TEST(RenderScalePolicyTest, CachedScaleDefaultsToOne) {
   EXPECT_FALSE(HostFramebufferScaleActive());
 }
 
+TEST(RenderScalePolicyTest, ScalesViewportsAndScissorsInPlace) {
+  VkViewport viewports[2] = {{10.0f, 20.0f, 1280.0f, 720.0f, 0.0f, 1.0f},
+                             {0.0f, 0.0f, 640.0f, 360.0f, 0.25f, 0.75f}};
+  ScaleViewports(viewports, 2, 0.5);
+  EXPECT_FLOAT_EQ(viewports[0].x, 5.0f);
+  EXPECT_FLOAT_EQ(viewports[0].y, 10.0f);
+  EXPECT_FLOAT_EQ(viewports[0].width, 640.0f);
+  EXPECT_FLOAT_EQ(viewports[0].height, 360.0f);
+  EXPECT_FLOAT_EQ(viewports[0].minDepth, 0.0f);
+  EXPECT_FLOAT_EQ(viewports[0].maxDepth, 1.0f);
+  EXPECT_FLOAT_EQ(viewports[1].width, 320.0f);
+
+  VkRect2D scissors[1] = {{{8, 16}, {1280u, 720u}}};
+  ScaleScissors(scissors, 1, 0.25);
+  EXPECT_EQ(scissors[0].offset.x, 2);
+  EXPECT_EQ(scissors[0].offset.y, 4);
+  EXPECT_EQ(scissors[0].extent.width, 320u);
+  EXPECT_EQ(scissors[0].extent.height, 180u);
+}
+
+TEST(RenderScalePolicyTest, ViewportScalingIsNoOpAtFullScale) {
+  VkViewport viewport = {10.0f, 20.0f, 1280.0f, 720.0f, 0.0f, 1.0f};
+  ScaleViewports(&viewport, 1, 1.0);
+  EXPECT_FLOAT_EQ(viewport.width, 1280.0f);
+  ScaleViewports(&viewport, 1, 0.0);
+  EXPECT_FLOAT_EQ(viewport.width, 1280.0f);
+  ScaleViewports(nullptr, 1, 0.5);
+  VkRect2D rect = {{4, 8}, {100u, 50u}};
+  ScaleRect2D(&rect, 1.0);
+  EXPECT_EQ(rect.extent.width, 100u);
+  ScaleRect2D(nullptr, 0.5);
+}
+
 }  // namespace
 }  // namespace graphics
 }  // namespace mocktail
