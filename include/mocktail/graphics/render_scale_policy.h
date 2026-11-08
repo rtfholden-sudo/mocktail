@@ -43,6 +43,30 @@ void ScaleViewports(VkViewport* viewports, std::uint32_t count, double scale);
 // Scales `count` scissors in place. No-op for scale <= 0 or >= 1 or null.
 void ScaleScissors(VkRect2D* scissors, std::uint32_t count, double scale);
 
+// True when the viewport extends beyond `framebuffer` (handles flipped
+// viewports with negative height). Viewports that exceed the clamped
+// framebuffer come from full-window coordinates and must be scaled onto
+// it; viewports already inside it were sized from the framebuffer itself
+// and must be left alone (scaling them again would shrink the scene into
+// a corner and leave black areas).
+bool ViewportExceedsFramebuffer(const VkViewport& viewport,
+                                VkExtent2D framebuffer);
+// Same test for a scissor / render-area rect.
+bool RectExceedsFramebuffer(const VkRect2D& rect, VkExtent2D framebuffer);
+
+// Scales only the viewports that exceed `framebuffer`, by (scale_x,
+// scale_y) per axis; the rest are left unchanged.
+void ScaleViewportsToFramebuffer(VkViewport* viewports, std::uint32_t count,
+                                 double scale_x, double scale_y,
+                                 VkExtent2D framebuffer);
+// Scales only the rect that exceeds `framebuffer` (render area).
+void ScaleRect2DToFramebuffer(VkRect2D* rect, double scale_x, double scale_y,
+                              VkExtent2D framebuffer);
+// Scales only the scissors that exceed `framebuffer`.
+void ScaleScissorsToFramebuffer(VkRect2D* scissors, std::uint32_t count,
+                                double scale_x, double scale_y,
+                                VkExtent2D framebuffer);
+
 } // namespace graphics
 } // namespace mocktail
 

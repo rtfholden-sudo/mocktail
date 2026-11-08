@@ -239,15 +239,17 @@ Mocktail detects the host CPU and GPU at startup and records them in
   injected through the host client-settings channel). The surface
   `currentExtent` from `vkGetPhysicalDeviceSurfaceCapabilitiesKHR` is clamped
   the same way. Because the game still works in full-window coordinates
-  (the window itself is not resized), Mocktail also scales every viewport,
-  scissor and dynamic-rendering area the game records — in the
-  `vkCmdSetViewport`/`vkCmdSetScissor`/`vkCmdSetViewportWithCount`/
-  `vkCmdSetScissorWithCount`/`vkCmdBeginRendering` hooks — down by the same
-  factor, MangoHud-style. The full scene is therefore rendered into the
-  smaller swapchain (no crop) and presentation upscales it to the window;
-  input keeps mapping correctly because the game still sees the real
-  window size. The engine DRS flag is skipped on that backend so the scale
-  is not applied twice. On non-Vulkan
+  (the window itself is not resized), Mocktail also scales any viewport,
+  scissor or dynamic-rendering area the game records that sticks out of
+  the smaller framebuffer — in the `vkCmdSetViewport`/`vkCmdSetScissor`/
+  `vkCmdSetViewportWithCount`/`vkCmdSetScissorWithCount`/
+  `vkCmdBeginRendering` hooks — down onto the framebuffer, MangoHud-style.
+  Passes already sized to the framebuffer are left untouched (scaling those
+  too would shrink them into a corner). The full scene is therefore
+  rendered into the smaller swapchain (no crop) and presentation upscales
+  it to the window; input keeps mapping correctly because the game still
+  sees the real window size. The engine DRS flag is skipped on that
+  backend so the scale is not applied twice. On non-Vulkan
   backends only the flag path exists; if the build ignores it, lower
   `window.width`/`window.height` instead — that directly shrinks the real
   framebuffer, which is the guaranteed lever on an iGPU. Use `logs: true` to
