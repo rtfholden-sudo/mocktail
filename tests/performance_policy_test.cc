@@ -382,7 +382,7 @@ TEST(PerformancePolicyTest, RenderQualityOverridesFxaaAndDrSScale) {
   std::string error;
   // fxaa on + render_scale 0.5: post-fx stays on, MSAA off, DRS at 50%.
   ASSERT_TRUE(MergeRenderQualityClientSettingsOverrides(
-      true, 0.5, R"({"unrelated":123})", &merged, &error));
+      true, 0.5, false, R"({"unrelated":123})", &merged, &error));
   const auto parsed = nlohmann::json::parse(merged);
   EXPECT_EQ(parsed.at("FFlagDisablePostFx"), "False");
   EXPECT_EQ(parsed.at("FIntDebugForceMSAASamples"), "0");
@@ -390,18 +390,24 @@ TEST(PerformancePolicyTest, RenderQualityOverridesFxaaAndDrSScale) {
   EXPECT_EQ(parsed.at("unrelated"), 123);
   // Defaults (fxaa off, scale 1.0): base overrides pass through untouched.
   ASSERT_TRUE(MergeRenderQualityClientSettingsOverrides(
-      false, 1.0, R"({"FFlagDisablePostFx":"True"})", &merged, &error));
+      false, 1.0, false, R"({"FFlagDisablePostFx":"True"})", &merged, &error));
   const auto off = nlohmann::json::parse(merged);
   EXPECT_EQ(off.at("FFlagDisablePostFx"), "True");
   EXPECT_FALSE(off.contains("FIntDebugForceMSAASamples"));
   EXPECT_FALSE(off.contains("FIntAutomaticDRSHundredthPercent"));
   // Scale 0.25 clamps to the documented floor percent.
   ASSERT_TRUE(MergeRenderQualityClientSettingsOverrides(
-      false, 0.25, "{}", &merged, &error));
+      false, 0.25, false, "{}", &merged, &error));
   EXPECT_EQ(nlohmann::json::parse(merged).at("FIntAutomaticDRSHundredthPercent"),
             "2500");
   EXPECT_FALSE(MergeRenderQualityClientSettingsOverrides(
-      true, 0.5, "[]", &merged, &error));
+      true, 0.5, false, "[]", &merged, &error));
+  // Host framebuffer scale active (Vulkan swapchain already clamped): the
+  // engine DRS flag is skipped so the scale is not applied twice.
+  ASSERT_TRUE(MergeRenderQualityClientSettingsOverrides(
+      false, 0.5, true, "{}", &merged, &error));
+  const auto host_scaled = nlohmann::json::parse(merged);
+  EXPECT_FALSE(host_scaled.contains("FIntAutomaticDRSHundredthPercent"));
 }
 
 TEST(PerformancePolicyTest, HostAudioMenuUsesBridgedDeviceQueries) {

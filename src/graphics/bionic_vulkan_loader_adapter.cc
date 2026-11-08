@@ -18,6 +18,7 @@
 
 #include "mocktail/graphics/android_vulkan_wsi_adapter.h"
 #include "mocktail/graphics/present_mode_policy.h"
+#include "mocktail/graphics/render_scale_policy.h"
 #include "mocktail/graphics/vulkan_etc2_emulation.h"
 #include "mocktail/graphics/vulkan_text_overlay_compositor.h"
 #include "mocktail/platform/platform_runtime.h"
@@ -1722,6 +1723,59 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
       }
     }
   }
+  {
+    // Host-side framebuffer scale: shrink the swapchain to render_scale of
+    // the requested extent so the 3D framebuffer is genuinely smaller (the
+    // presentation engine upscales it to the window). This needs no engine
+    // flag, so it also works on Roblox builds that ignore locally-set flags
+    // (the 2025-09-29 allowlist) - unlike the FIntAutomaticDRS flag.
+    const double render_scale = mocktail::graphics::CachedRenderScale();
+    if (render_scale > 0.0 && render_scale < 1.0) {
+      PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR caps_query = nullptr;
+      {
+        AdapterState& state = State();
+        std::lock_guard<std::mutex> lock(state.mutex);
+        caps_query = state.host_surface_capabilities;
+      }
+      const VkPhysicalDevice physical_device =
+          HostDispatchForDevice(device).physical_device;
+      VkExtent2D min_extent{1, 1};
+      VkExtent2D max_extent{UINT32_MAX, UINT32_MAX};
+      VkExtent2D current_extent{0, 0};
+      if (caps_query != nullptr && physical_device != VK_NULL_HANDLE) {
+        VkSurfaceCapabilitiesKHR capabilities{};
+        if (caps_query(physical_device, create_info->surface, &capabilities) ==
+            VK_SUCCESS) {
+          min_extent = capabilities.minImageExtent;
+          max_extent = capabilities.maxImageExtent;
+          current_extent = capabilities.currentExtent;
+        }
+      }
+      VkExtent2D requested = create_info->imageExtent;
+      if (requested.width == 0 || requested.width == UINT32_MAX) {
+        requested.width = current_extent.width;
+      }
+      if (requested.height == 0 || requested.height == UINT32_MAX) {
+        requested.height = current_extent.height;
+      }
+      const VkExtent2D scaled = mocktail::graphics::ScaleSwapchainExtent(
+          requested, render_scale, min_extent, max_extent);
+      if (scaled.width != host_info.imageExtent.width ||
+          scaled.height != host_info.imageExtent.height) {
+        static std::atomic<bool> scale_logged{false};
+        if (!scale_logged.exchange(true, std::memory_order_relaxed)) {
+          std::fprintf(stderr,
+                       "  [vulkan] render_scale=%.2f host framebuffer scale: "
+                       "swapchain %ux%u -> %ux%u (upscaled at present, no "
+                       "engine flag needed)\n",
+                       render_scale, host_info.imageExtent.width,
+                       host_info.imageExtent.height, scaled.width,
+                       scaled.height);
+        }
+        host_info.imageExtent = scaled;
+      }
+    }
+  }
   const VkResult result =
       host_create(device, &host_info, allocator, swapchain);
   if (result != VK_SUCCESS) {
@@ -1742,7 +1796,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
   if (images_result == VK_SUCCESS || images_result == VK_INCOMPLETE) {
     images.resize(image_count);
     (void)State().text_overlay.RegisterSwapchain(
-        device, *swapchain, *create_info, images.data(), image_count);
+        device, *swapchain, host_info, images.data(), image_count);
   }
   return result;
 }

@@ -231,12 +231,18 @@ Mocktail detects the host CPU and GPU at startup and records them in
   window renders at 640x325) and is upscaled to the window at present — a real
   FPS win on an Iris Xe iGPU without shrinking the window.
   `window.fxaa: true` turns on Roblox's FXAA post-process to soften the
-  upscale. The DRS flag is injected through Mocktail's host client-settings
-  channel; if your Roblox build ignores locally-set flags (the 2025-09-29
-  allowlist), lower `window.width`/`window.height` instead — that directly
-  shrinks the real framebuffer, which is the guaranteed lever on an iGPU.
-  Use `logs: true` to check in `latest.log` whether the DRS flag was
-  applied.
+  upscale. On the `direct-vulkan` backend Mocktail additionally clamps the
+  Vulkan swapchain `imageExtent` to `render_scale` of the requested extent in
+  its `vkCreateSwapchainKHR` hook — a host-side framebuffer scale that needs
+  no engine flag at all, so it works even on Roblox builds that ignore
+  locally-set flags (the 2025-09-29 allowlist, which kills the DRS flag
+  injected through the host client-settings channel). The presentation engine
+  upscales the smaller swapchain to the window, and the engine DRS flag is
+  skipped on that backend so the scale is not applied twice. On non-Vulkan
+  backends only the flag path exists; if the build ignores it, lower
+  `window.width`/`window.height` instead — that directly shrinks the real
+  framebuffer, which is the guaranteed lever on an iGPU. Use `logs: true` to
+  check in `latest.log` whether the DRS flag was applied.
 
 ## Privacy: telemetry is disabled
 
