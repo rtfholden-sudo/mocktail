@@ -1,5 +1,6 @@
 #include "compat/bionic_socket_runtime.h"
 
+#include "runtime/domain_allowlist.h"
 #include "runtime/helper_environment.h"
 
 #include <algorithm>
@@ -11,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <spawn.h>
@@ -368,7 +370,70 @@ ssize_t BionicSendmsg(int socket, const msghdr *message, int flags) noexcept {
   return static_cast<ssize_t>(sent_total);
 }
 
+// Game-side raw-IP connect gate. When MOCKTAIL_ALLOWED_DOMAINS is set, a
+// connect() to a public IPv4 address is only allowed when the address's PTR
+// names pass the domain allowlist AND forward-verify back to the address
+// (see runtime/domain_allowlist.h). Loopback, link-local, and private
+// (RFC1918) ranges never leave the machine and are always allowed.
+bool ConnectAddressAllowed(const struct sockaddr* address,
+                           socklen_t length) noexcept {
+  if (address == nullptr || length < static_cast<socklen_t>(sizeof(sa_family_t))) {
+    return true;
+  }
+  const char* raw = ::getenv("MOCKTAIL_ALLOWED_DOMAINS");
+  if (raw == nullptr || raw[0] == '\0') {
+    return true;
+  }
+  const std::vector<std::string> allowed =
+      mocktail::runtime::ParseDomainAllowlist(raw);
+  if (allowed.empty()) {
+    return true;
+  }
+  if (address->sa_family != AF_INET) {
+    return true;  // AF_UNIX / AF_INET6 pass through unchanged.
+  }
+  if (length < static_cast<socklen_t>(sizeof(struct sockaddr_in))) {
+    return true;
+  }
+  const auto* in = reinterpret_cast<const struct sockaddr_in*>(address);
+  const std::uint32_t ip = ::ntohl(in->sin_addr.s_addr);
+  const bool local =
+      (ip >> 24) == 127 ||          // 127.0.0.0/8 loopback
+      (ip >> 24) == 10 ||           // 10.0.0.0/8
+      (ip >> 20) == 0xAC1 ||        // 172.16.0.0/12
+      (ip >> 16) == 0xC0A8 ||       // 192.168.0.0/16
+      (ip >> 16) == 0xA9FE;         // 169.254.0.0/16 link-local
+  if (local) {
+    return true;
+  }
+  const bool ok = mocktail::runtime::RawIpv4Allowed(ip, allowed);
+  if (!ok) {
+    char dotted[INET_ADDRSTRLEN] = {};
+    struct in_addr printable {};
+    printable.s_addr = ::htonl(ip);
+    ::inet_ntop(AF_INET, &printable, dotted, sizeof(dotted));
+    std::fprintf(stderr, "  [net] blocked connect ip=%s reason=domain-allowlist\n",
+                 dotted);
+  }
+  return ok;
+}
+
+int BionicConnect(int socket, const struct sockaddr* address,
+                  socklen_t length) noexcept {
+  if (!ConnectAddressAllowed(address, length)) {
+    errno = ECONNREFUSED;
+    return -1;
+  }
+  return ::connect(socket, address, length);
+}
+
 }  // namespace mocktail::compat
+
+extern "C" int mocktail_bionic_connect(int socket,
+                                       const struct sockaddr* address,
+                                       socklen_t length) {
+  return mocktail::compat::BionicConnect(socket, address, length);
+}
 
 extern "C" int mocktail_bionic_setsockopt(int socket, int level,
                                           int option_name,

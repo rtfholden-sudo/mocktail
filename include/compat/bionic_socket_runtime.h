@@ -5,6 +5,9 @@
 
 extern "C" {
 
+int mocktail_bionic_connect(int socket, const struct sockaddr *address,
+                            socklen_t length);
+
 int mocktail_bionic_setsockopt(int socket, int level, int option_name,
                                const void *option_value,
                                socklen_t option_length);

@@ -47,6 +47,8 @@
 #include "compat/bionic_abi_exports.h"
 #include "compat/bionic_prctl_runtime.h"
 #include "compat/bionic_pthread_create_runtime.h"
+#include <filesystem>
+
 #include "compat/bionic_socket_runtime.h"
 #include "compat/build_profile.h"
 #include "compat/elf_build_id.h"
@@ -1076,8 +1078,17 @@ bool GameDomainAllowed(const char* host) {
   if (allowed.empty()) {
     return true;
   }
-  return mocktail::runtime::DomainAllowed(host != nullptr ? host : "",
-                                          allowed);
+  if (mocktail::runtime::DomainAllowed(host != nullptr ? host : "", allowed)) {
+    return true;
+  }
+  // Raw IPv4 literal: reverse-resolve it via the public PTR resolvers and
+  // allow only when a PTR name passes the allowlist and forward-verifies
+  // back to this address (anti-spoofing).
+  std::uint32_t address = 0;
+  if (host != nullptr && mocktail::runtime::ParseIpv4(host, &address)) {
+    return mocktail::runtime::RawIpv4Allowed(address, allowed);
+  }
+  return false;
 }
 
 void LogBlockedDomain(const char* api, const char* host) {
@@ -5620,12 +5631,25 @@ int mocktail::legacy::Run(const runtime::CommandLineOptions& options,
   }
   RegisterBionicDnsWrappers();
   RegisterBionicPathWrappers();
+  {
+    // Persistent raw-IP allowlist cache: stamped with the active payload
+    // version so a Roblox update discards it; the updater also unlinks the
+    // file on promotion.
+    const char* cache_file = std::getenv("MOCKTAIL_DOMAIN_CACHE_FILE");
+    const char* payload_id = std::getenv("MOCKTAIL_PAYLOAD_ID");
+    mocktail::runtime::ConfigureRawIpDomainCache(
+        cache_file != nullptr ? std::filesystem::path(cache_file)
+                              : std::filesystem::path(),
+        payload_id != nullptr ? payload_id : "");
+  }
   linker::RegisterSymbol("prctl",
                          reinterpret_cast<void*>(mocktail_bionic_prctl));
   linker::RegisterSymbol(
       "setsockopt", reinterpret_cast<void*>(mocktail_bionic_setsockopt));
   linker::RegisterSymbol("sendmsg",
                          reinterpret_cast<void*>(mocktail_bionic_sendmsg));
+  linker::RegisterSymbol("connect",
+                         reinterpret_cast<void*>(mocktail_bionic_connect));
   linker::RegisterSymbol("mprotect", reinterpret_cast<void*>(mocktail_mprotect));
   linker::RegisterSymbol("pthread_condattr_init",
                          reinterpret_cast<void*>(mocktail_pthread_condattr_init));
