@@ -7,6 +7,7 @@
 #include <utility>
 #include <variant>
 
+#include "mocktail/graphics/render_scale_policy.h"
 #include "window/window.h"
 
 namespace mocktail {
@@ -36,9 +37,29 @@ Status RobloxWindowInputRuntime::Initialize() {
     return Status::Error(StatusCode::kUnavailable,
                          "SDL input window is unavailable");
   }
+  // Guest space is the frame the engine actually draws into. With host
+  // render scaling that is the advertised (render-scaled) extent, not the
+  // window pixel size: the layer stretches that smaller frame back onto the
+  // window, so pointer coordinates and text-box rectangles must use it or
+  // the cursor lands render_scale times too far from the origin.
+  const VkExtent2D guest_frame = mocktail::graphics::AdvertisedFrameExtent(
+      {static_cast<std::uint32_t>(window_viewport.pixel_width),
+       static_cast<std::uint32_t>(window_viewport.pixel_height)},
+      mocktail::graphics::CachedRenderScale());
+  if (guest_frame.width != static_cast<std::uint32_t>(
+                               window_viewport.pixel_width) ||
+      guest_frame.height != static_cast<std::uint32_t>(
+                                window_viewport.pixel_height)) {
+    std::fprintf(stderr,
+                 "  [input] guest coordinate space %ux%u (window %dx%d, "
+                 "render_scale=%.2f)\n",
+                 guest_frame.width, guest_frame.height,
+                 window_viewport.pixel_width, window_viewport.pixel_height,
+                 mocktail::graphics::CachedRenderScale());
+  }
   Status status = text_surface_overlay_.Initialize(
-      {window_viewport.pixel_width, window_viewport.pixel_height,
-       window_viewport.dpi_scale});
+      {static_cast<int>(guest_frame.width),
+       static_cast<int>(guest_frame.height), window_viewport.dpi_scale});
   if (!status.ok()) {
     return status;
   }
@@ -46,8 +67,8 @@ Status RobloxWindowInputRuntime::Initialize() {
       (SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_INPUT_FOCUS) != 0;
   status = runtime_.Initialize(
       {window_viewport.logical_width, window_viewport.logical_height,
-       window_viewport.pixel_width, window_viewport.pixel_height,
-       window_viewport.dpi_scale},
+       static_cast<int32_t>(guest_frame.width),
+       static_cast<int32_t>(guest_frame.height), window_viewport.dpi_scale},
       initially_focused);
   if (!status.ok()) {
     (void)text_surface_overlay_.Shutdown();
@@ -100,8 +121,13 @@ void RobloxWindowInputRuntime::PlatformEventCallback(
   }
   if (const auto* resized =
           std::get_if<platform::WindowResizedEvent>(&event.payload)) {
+    const VkExtent2D guest_frame = mocktail::graphics::AdvertisedFrameExtent(
+        {static_cast<std::uint32_t>(resized->pixel_width),
+         static_cast<std::uint32_t>(resized->pixel_height)},
+        mocktail::graphics::CachedRenderScale());
     (void)self->text_surface_overlay_.UpdateViewport(
-        {resized->pixel_width, resized->pixel_height, resized->density_scale});
+        {static_cast<int>(guest_frame.width),
+         static_cast<int>(guest_frame.height), resized->density_scale});
   }
   (void)self->runtime_.HandleEvent(event);
   if (const auto* focus =

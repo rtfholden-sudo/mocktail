@@ -281,6 +281,36 @@ TEST(RenderScalePolicyTest, MapsBlitAndCopyRegionsOntoTheSwapchain) {
   EXPECT_EQ(ra.extent.height, 650u);
 }
 
+TEST(RenderScalePolicyTest, AdvertisedFrameExtentIsTheGuestCoordinateSpace) {
+  // Guest space (pointer coordinates, IME rectangles) is the frame the engine
+  // draws into, not the window: 1280x650 at 0.7 -> 896x455.
+  const VkExtent2D frame = AdvertisedFrameExtent({1280, 650}, 0.7);
+  EXPECT_EQ(frame.width, 896u);
+  EXPECT_EQ(frame.height, 455u);
+  // A window point maps into guest space with the same factor the layer uses
+  // to stretch the frame back onto the window, so the engine cursor lands
+  // under the real cursor. Reported position: window (238, 307).
+  const double scale_x = static_cast<double>(frame.width) / 1280.0;
+  const double scale_y = static_cast<double>(frame.height) / 650.0;
+  const double guest_x = 238.0 * scale_x;
+  const double guest_y = 307.0 * scale_y;
+  EXPECT_DOUBLE_EQ(guest_x, 166.6);
+  EXPECT_DOUBLE_EQ(guest_y, 214.9);
+  EXPECT_DOUBLE_EQ(guest_x / scale_x, 238.0);
+  EXPECT_DOUBLE_EQ(guest_y / scale_y, 307.0);
+  // Scale 1 is a passthrough, and other scales use the same llround rule the
+  // surface clamp uses.
+  const VkExtent2D native = AdvertisedFrameExtent({1280, 650}, 1.0);
+  EXPECT_EQ(native.width, 1280u);
+  EXPECT_EQ(native.height, 650u);
+  const VkExtent2D half = AdvertisedFrameExtent({1280, 650}, 0.5);
+  EXPECT_EQ(half.width, 640u);
+  EXPECT_EQ(half.height, 325u);
+  const VkExtent2D odd = AdvertisedFrameExtent({1366, 768}, 0.7);
+  EXPECT_EQ(odd.width, 956u);
+  EXPECT_EQ(odd.height, 538u);
+}
+
 }  // namespace
 }  // namespace graphics
 }  // namespace mocktail

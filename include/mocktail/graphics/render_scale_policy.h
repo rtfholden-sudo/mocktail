@@ -29,6 +29,14 @@ bool HostFramebufferScaleActive();
 VkExtent2D ScaleSwapchainExtent(VkExtent2D requested, double scale,
                                 VkExtent2D min_extent, VkExtent2D max_extent);
 
+// The frame extent the engine draws into while host render scaling is
+// active - the same value the layer reports to the game as the surface
+// extent. Guest-space geometry (pointer coordinates, IME/text-box rectangles)
+// is expressed in this space, so it must be derived from here rather than
+// from the window pixel size; the layer then stretches that smaller frame
+// back onto the window.
+VkExtent2D AdvertisedFrameExtent(VkExtent2D window_extent, double scale);
+
 // Scales a 2D rect (scissor offset/extent or a rendering area) in place by
 // `scale`. MangoHud-style: the game keeps working in full-window
 // coordinates, the layer shrinks the GPU-side rect to the clamped

@@ -73,6 +73,11 @@ bool HostFramebufferScaleActive() {
   return scale > 0.0 && scale < 1.0;
 }
 
+VkExtent2D AdvertisedFrameExtent(VkExtent2D window_extent, double scale) {
+  return ScaleSwapchainExtent(window_extent, scale, {1, 1},
+                              {UINT32_MAX, UINT32_MAX});
+}
+
 VkExtent2D ScaleSwapchainExtent(VkExtent2D requested, double scale,
                                 VkExtent2D min_extent, VkExtent2D max_extent) {
   if (!(scale > 0.0) || scale >= 1.0) {

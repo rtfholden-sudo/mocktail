@@ -192,7 +192,9 @@ window:
   # are recognised by the registered swapchain images or by a matching
   # extent, or - for imageless framebuffers - by the attachment views passed
   # at render-pass begin; images are tracked per swapchain handle so a
-  # recreated swapchain keeps detection alive. With logs on, [vulkan] dbg
+  # recreated swapchain keeps detection alive. Pointer coordinates and
+  # text-box/IME geometry are mapped into that same render-scaled frame, so
+  # the in-game cursor tracks the real cursor. With logs on, [vulkan] dbg
   # lines name the composite path in use.
   # It works
   # even on Roblox builds that ignore locally-set flags (2025-09-29
