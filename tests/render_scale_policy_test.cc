@@ -218,6 +218,39 @@ TEST(RenderScalePolicyTest, MapsPresentPassRectsOntoTheSwapchain) {
   EXPECT_FLOAT_EQ(window_vp.width, 1280.0f);  // untouched
 }
 
+TEST(RenderScalePolicyTest, PresentPassFillsWindowAtLowScale) {
+  // Follow-up run geometry: window 1366x768, render_scale 0.7 -> advertised
+  // 956x537, swapchain kept at the window 1366x768.
+  const VkExtent2D window{1366, 768};
+  const VkExtent2D advertised =
+      ScaleSwapchainExtent(window, 0.7, {1, 1}, {UINT32_MAX, UINT32_MAX});
+  EXPECT_EQ(advertised.width, 956u);
+  EXPECT_EQ(advertised.height, 538u);
+  const VkExtent2D swapchain = window;
+  VkViewport vp{0.0f, 0.0f, 956.0f, 538.0f, 0.0f, 1.0f};
+  MapViewportToSwapchain(&vp, advertised, swapchain, window);
+  EXPECT_FLOAT_EQ(vp.width, 1366.0f);
+  EXPECT_FLOAT_EQ(vp.height, 768.0f);
+  VkViewport window_vp{0.0f, 0.0f, 1366.0f, 768.0f, 0.0f, 1.0f};
+  MapViewportToSwapchain(&window_vp, advertised, swapchain, window);
+  EXPECT_FLOAT_EQ(window_vp.width, 1366.0f);  // already full: untouched
+  EXPECT_FLOAT_EQ(window_vp.height, 768.0f);
+  VkRect2D ra{{0, 0}, {956u, 538u}};
+  MapRectToSwapchain(&ra, advertised, swapchain, window);
+  EXPECT_EQ(ra.extent.width, 1366u);
+  EXPECT_EQ(ra.extent.height, 768u);
+  VkViewport off{0.0f, 0.0f, 1366.0f, 768.0f, 0.0f, 1.0f};
+  ScaleViewportsToFramebuffer(&off, 1, 956.0 / 1366.0, 538.0 / 768.0,
+                              advertised);
+  EXPECT_FLOAT_EQ(off.width, 956.0f);
+  EXPECT_FLOAT_EQ(off.height, 538.0f);
+  VkViewport off_fb{0.0f, 0.0f, 956.0f, 538.0f, 0.0f, 1.0f};
+  ScaleViewportsToFramebuffer(&off_fb, 1, 956.0 / 1366.0, 538.0 / 768.0,
+                              advertised);
+  EXPECT_FLOAT_EQ(off_fb.width, 956.0f);  // fits: untouched
+  EXPECT_FLOAT_EQ(off_fb.height, 538.0f);
+}
+
 }  // namespace
 }  // namespace graphics
 }  // namespace mocktail
