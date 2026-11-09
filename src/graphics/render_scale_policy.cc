@@ -1,5 +1,6 @@
 #include "mocktail/graphics/render_scale_policy.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -121,11 +122,13 @@ bool ViewportExceedsFramebuffer(const VkViewport& viewport,
   if (framebuffer.width == 0 || framebuffer.height == 0) {
     return false;
   }
-  const double right =
-      static_cast<double>(viewport.x) + std::fabs(viewport.width);
-  const double bottom =
-      static_cast<double>(viewport.y) + std::fabs(viewport.height);
-  return viewport.x < 0.0f || viewport.y < 0.0f ||
+  // Covered pixel range, so flipped (negative-height/width) viewports are
+  // tested correctly.
+  const double left = std::min(viewport.x, viewport.x + viewport.width);
+  const double right = std::max(viewport.x, viewport.x + viewport.width);
+  const double top = std::min(viewport.y, viewport.y + viewport.height);
+  const double bottom = std::max(viewport.y, viewport.y + viewport.height);
+  return left < 0.0 || top < 0.0 ||
          right > static_cast<double>(framebuffer.width) ||
          bottom > static_cast<double>(framebuffer.height);
 }
@@ -179,6 +182,94 @@ void ScaleScissorsToFramebuffer(VkRect2D* scissors, std::uint32_t count,
   }
   for (std::uint32_t i = 0; i < count; ++i) {
     ScaleRect2DToFramebuffer(&scissors[i], scale_x, scale_y, framebuffer);
+  }
+}
+
+bool RectFitsWithin(const VkRect2D& rect, VkExtent2D framebuffer) {
+  if (framebuffer.width == 0 || framebuffer.height == 0) {
+    return false;
+  }
+  return rect.offset.x >= 0 && rect.offset.y >= 0 &&
+         static_cast<std::int64_t>(rect.offset.x) + rect.extent.width <=
+             framebuffer.width &&
+         static_cast<std::int64_t>(rect.offset.y) + rect.extent.height <=
+             framebuffer.height;
+}
+
+bool ViewportFitsWithin(const VkViewport& viewport, VkExtent2D framebuffer) {
+  if (framebuffer.width == 0 || framebuffer.height == 0) {
+    return false;
+  }
+  const double left = std::min(viewport.x, viewport.x + viewport.width);
+  const double right = std::max(viewport.x, viewport.x + viewport.width);
+  const double top = std::min(viewport.y, viewport.y + viewport.height);
+  const double bottom = std::max(viewport.y, viewport.y + viewport.height);
+  return left >= 0.0 && top >= 0.0 &&
+         right <= static_cast<double>(framebuffer.width) &&
+         bottom <= static_cast<double>(framebuffer.height);
+}
+
+void ScaleRect2DBy(VkRect2D* rect, double scale_x, double scale_y) {
+  if (rect == nullptr) {
+    return;
+  }
+  rect->offset.x = static_cast<std::int32_t>(rect->offset.x * scale_x);
+  rect->offset.y = static_cast<std::int32_t>(rect->offset.y * scale_y);
+  rect->extent.width =
+      static_cast<std::uint32_t>(rect->extent.width * scale_x);
+  rect->extent.height =
+      static_cast<std::uint32_t>(rect->extent.height * scale_y);
+}
+
+void ScaleViewportsBy(VkViewport* viewports, std::uint32_t count,
+                      double scale_x, double scale_y) {
+  if (viewports == nullptr) {
+    return;
+  }
+  for (std::uint32_t i = 0; i < count; ++i) {
+    viewports[i].x *= static_cast<float>(scale_x);
+    viewports[i].y *= static_cast<float>(scale_y);
+    viewports[i].width *= static_cast<float>(scale_x);
+    viewports[i].height *= static_cast<float>(scale_y);
+  }
+}
+
+void MapRectToSwapchain(VkRect2D* rect, VkExtent2D advertised,
+                        VkExtent2D swapchain, VkExtent2D window) {
+  if (rect == nullptr) {
+    return;
+  }
+  if (advertised.width != 0 && advertised.height != 0 &&
+      swapchain.width != 0 && swapchain.height != 0 &&
+      RectFitsWithin(*rect, advertised)) {
+    ScaleRect2DBy(
+        rect, static_cast<double>(swapchain.width) / advertised.width,
+        static_cast<double>(swapchain.height) / advertised.height);
+  } else if (swapchain.width != 0 && swapchain.height != 0 &&
+             window.width != 0 && window.height != 0 &&
+             RectExceedsFramebuffer(*rect, swapchain)) {
+    ScaleRect2DBy(rect, static_cast<double>(swapchain.width) / window.width,
+                  static_cast<double>(swapchain.height) / window.height);
+  }
+}
+
+void MapViewportToSwapchain(VkViewport* viewport, VkExtent2D advertised,
+                            VkExtent2D swapchain, VkExtent2D window) {
+  if (viewport == nullptr) {
+    return;
+  }
+  if (advertised.width != 0 && advertised.height != 0 &&
+      swapchain.width != 0 && swapchain.height != 0 &&
+      ViewportFitsWithin(*viewport, advertised)) {
+    ScaleViewportsBy(
+        viewport, 1, static_cast<double>(swapchain.width) / advertised.width,
+        static_cast<double>(swapchain.height) / advertised.height);
+  } else if (swapchain.width != 0 && swapchain.height != 0 &&
+             window.width != 0 && window.height != 0 &&
+             ViewportExceedsFramebuffer(*viewport, swapchain)) {
+    ScaleViewportsBy(viewport, 1,
+                     static_cast<double>(swapchain.width) / window.width,
+                     static_cast<double>(swapchain.height) / window.height);
   }
 }
 

@@ -14,6 +14,8 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #include <vector>
@@ -142,6 +144,11 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginRendering(
     VkCommandBuffer command_buffer, const VkRenderingInfo* rendering_info);
 VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderingKHR(
     VkCommandBuffer command_buffer, const VkRenderingInfoKHR* rendering_info);
+VKAPI_ATTR void VKAPI_CALL vkCmdEndRendering(VkCommandBuffer command_buffer);
+VKAPI_ATTR void VKAPI_CALL vkCmdEndRenderingKHR(VkCommandBuffer command_buffer);
+VKAPI_ATTR void VKAPI_CALL vkDestroyImageView(
+    VkDevice device, VkImageView image_view,
+    const VkAllocationCallbacks* allocator);
 VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
     VkPhysicalDevice physical_device, VkSurfaceKHR surface,
     VkSurfaceCapabilitiesKHR* capabilities);
@@ -192,6 +199,8 @@ struct AdapterState {
     PFN_vkCmdSetViewportWithCount cmd_set_viewport_with_count = nullptr;
     PFN_vkCmdSetScissorWithCount cmd_set_scissor_with_count = nullptr;
     PFN_vkCmdBeginRendering begin_rendering = nullptr;
+    PFN_vkCmdEndRendering cmd_end_rendering = nullptr;
+    PFN_vkDestroyImageView destroy_image_view = nullptr;
   };
 
   struct QueueBinding {
@@ -229,7 +238,11 @@ struct AdapterState {
   std::atomic<NoteSurfaceOutOfDateFn> note_surface_out_of_date{nullptr};
   bool extent_translation_logged = false;
   bool scale_extent_logged = false;
-  VkExtent2D clamped_framebuffer{0, 0};
+  VkExtent2D advertised_framebuffer{0, 0};
+  VkExtent2D swapchain_extent{0, 0};
+  std::unordered_set<std::uint64_t> swapchain_images;
+  std::unordered_map<std::uint64_t, std::uint64_t> view_to_image;
+  std::unordered_set<std::uint64_t> present_pass_commands;
   bool present_policy_logged = false;
   bool initialized = false;
 };
@@ -546,6 +559,12 @@ void RegisterHostDeviceDispatch(VkDevice device,
       get_device_proc_addr(device, "vkCmdBeginRendering") != nullptr
           ? get_device_proc_addr(device, "vkCmdBeginRendering")
           : get_device_proc_addr(device, "vkCmdBeginRenderingKHR"));
+  dispatch.cmd_end_rendering = reinterpret_cast<PFN_vkCmdEndRendering>(
+      get_device_proc_addr(device, "vkCmdEndRendering") != nullptr
+          ? get_device_proc_addr(device, "vkCmdEndRendering")
+          : get_device_proc_addr(device, "vkCmdEndRenderingKHR"));
+  dispatch.destroy_image_view = reinterpret_cast<PFN_vkDestroyImageView>(
+      get_device_proc_addr(device, "vkDestroyImageView"));
 
   AdapterState& state = State();
   std::lock_guard<std::mutex> lock(state.mutex);
@@ -792,6 +811,9 @@ PFN_vkVoidFunction AdapterProc(const char* name) {
   MOCKTAIL_VK_PROC(vkCmdSetScissorWithCountEXT)
   MOCKTAIL_VK_PROC(vkCmdBeginRendering)
   MOCKTAIL_VK_PROC(vkCmdBeginRenderingKHR)
+  MOCKTAIL_VK_PROC(vkCmdEndRendering)
+  MOCKTAIL_VK_PROC(vkCmdEndRenderingKHR)
+  MOCKTAIL_VK_PROC(vkDestroyImageView)
   MOCKTAIL_VK_PROC(vkGetPhysicalDeviceFeatures)
   MOCKTAIL_VK_PROC(vkGetPhysicalDeviceFeatures2)
   MOCKTAIL_VK_PROC(vkGetPhysicalDeviceFormatProperties)
@@ -913,7 +935,10 @@ bool IsDeviceAdapterProc(const char* name) {
                              std::strcmp(name, "vkCmdSetScissorWithCountEXT") ==
                                  0 ||
                              std::strcmp(name, "vkCmdBeginRendering") == 0 ||
-                             std::strcmp(name, "vkCmdBeginRenderingKHR") == 0);
+                             std::strcmp(name, "vkCmdBeginRenderingKHR") == 0 ||
+                             std::strcmp(name, "vkCmdEndRendering") == 0 ||
+                             std::strcmp(name, "vkCmdEndRenderingKHR") == 0 ||
+                             std::strcmp(name, "vkDestroyImageView") == 0);
 }
 
 bool IsGlobalAdapterProc(const char* name) {
@@ -1797,11 +1822,17 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
     }
   }
   {
-    // Host-side framebuffer scale: shrink the swapchain to render_scale of
-    // the requested extent so the 3D framebuffer is genuinely smaller (the
-    // presentation engine upscales it to the window). This needs no engine
-    // flag, so it also works on Roblox builds that ignore locally-set flags
-    // (the 2025-09-29 allowlist) - unlike the FIntAutomaticDRS flag.
+    // Host-side framebuffer scale: the surface currentExtent is advertised at
+    // render_scale of the real window (the game sizes its offscreen targets to
+    // that smaller framebuffer), but the swapchain itself is kept at the real
+    // window extent so presentation fills the window even on WSI
+    // implementations that do not upscale a smaller swapchain - that is what
+    // avoids black bars / top-left pinning. The composite pass that renders
+    // into the swapchain is stretched onto it by the vkCmdBeginRendering /
+    // vkCmdSetViewport / vkCmdSetScissor hooks (MapRectToSwapchain /
+    // MapViewportToSwapchain). This needs no engine flag, so it also works on
+    // Roblox builds that ignore locally-set flags (the 2025-09-29 allowlist)
+    // - unlike the FIntAutomaticDRS flag.
     const double render_scale = mocktail::graphics::CachedRenderScale();
     if (render_scale > 0.0 && render_scale < 1.0) {
       PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR caps_query = nullptr;
@@ -1824,31 +1855,41 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
           current_extent = capabilities.currentExtent;
         }
       }
-      VkExtent2D requested = create_info->imageExtent;
-      if (requested.width == 0 || requested.width == UINT32_MAX) {
-        requested.width = current_extent.width;
+      VkExtent2D real_window = current_extent;
+      if (real_window.width == 0 || real_window.width == UINT32_MAX ||
+          real_window.height == 0 || real_window.height == UINT32_MAX) {
+        const WindowDimensionFn window_width =
+            ResolveProcessFunction<WindowDimensionFn>("mocktail_window_width");
+        const WindowDimensionFn window_height =
+            ResolveProcessFunction<WindowDimensionFn>("mocktail_window_height");
+        if (window_width != nullptr && window_height != nullptr &&
+            window_width() > 0 && window_height() > 0) {
+          real_window = {static_cast<std::uint32_t>(window_width()),
+                         static_cast<std::uint32_t>(window_height())};
+        }
       }
-      if (requested.height == 0 || requested.height == UINT32_MAX) {
-        requested.height = current_extent.height;
-      }
-      const VkExtent2D scaled = mocktail::graphics::ScaleSwapchainExtent(
-          requested, render_scale, min_extent, max_extent);
-      if (scaled.width != host_info.imageExtent.width ||
-          scaled.height != host_info.imageExtent.height) {
+      if (real_window.width != 0 && real_window.height != 0) {
+        const VkExtent2D advertised = mocktail::graphics::ScaleSwapchainExtent(
+            real_window, render_scale, min_extent, max_extent);
+        const VkExtent2D target{
+            std::clamp(real_window.width, min_extent.width, max_extent.width),
+            std::clamp(real_window.height, min_extent.height,
+                       max_extent.height)};
         static std::atomic<bool> scale_logged{false};
         if (!scale_logged.exchange(true, std::memory_order_relaxed)) {
           std::fprintf(stderr,
-                       "  [vulkan] render_scale=%.2f host framebuffer scale: "
-                       "swapchain %ux%u -> %ux%u (upscaled at present, no "
-                       "engine flag needed)\n",
-                       render_scale, host_info.imageExtent.width,
-                       host_info.imageExtent.height, scaled.width,
-                       scaled.height);
+                       "  [vulkan] render_scale=%.2f game surface advertised "
+                       "%ux%u, swapchain kept at window %ux%u (requested "
+                       "%ux%u; composite pass is stretched onto it)\n",
+                       render_scale, advertised.width, advertised.height,
+                       target.width, target.height, host_info.imageExtent.width,
+                       host_info.imageExtent.height);
         }
-        host_info.imageExtent = scaled;
+        host_info.imageExtent = target;
         AdapterState& state = State();
         std::lock_guard<std::mutex> lock(state.mutex);
-        state.clamped_framebuffer = scaled;
+        state.swapchain_extent = target;
+        state.advertised_framebuffer = advertised;
       }
     }
   }
@@ -1873,6 +1914,13 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
     images.resize(image_count);
     (void)State().text_overlay.RegisterSwapchain(
         device, *swapchain, host_info, images.data(), image_count);
+    {
+      AdapterState& state = State();
+      std::lock_guard<std::mutex> lock(state.mutex);
+      for (const VkImage image : images) {
+        state.swapchain_images.insert(reinterpret_cast<std::uint64_t>(image));
+      }
+    }
   }
   return result;
 }
@@ -1882,6 +1930,18 @@ vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain,
                       const VkAllocationCallbacks* allocator) {
   const auto host_destroy = reinterpret_cast<PFN_vkDestroySwapchainKHR>(
       HostDeviceProc(device, "vkDestroySwapchainKHR"));
+  {
+    AdapterState& state = State();
+    std::lock_guard<std::mutex> lock(state.mutex);
+    for (auto it = state.view_to_image.begin(); it != state.view_to_image.end();) {
+      if (state.swapchain_images.count(it->second) != 0) {
+        it = state.view_to_image.erase(it);
+      } else {
+        ++it;
+      }
+    }
+    state.swapchain_images.clear();
+  }
   State().text_overlay.DestroySwapchain(device, swapchain);
   if (host_destroy != nullptr) {
     host_destroy(device, swapchain, allocator);
@@ -2110,6 +2170,12 @@ VKAPI_ATTR VkResult VKAPI_CALL vkResetCommandBuffer(
     return VK_ERROR_INITIALIZATION_FAILED;
   }
   State().etc2.ReleaseCommandBuffer(command_buffer);
+  {
+    AdapterState& state = State();
+    std::lock_guard<std::mutex> lock(state.mutex);
+    state.present_pass_commands.erase(
+        reinterpret_cast<std::uint64_t>(command_buffer));
+  }
   const VkResult result = host_reset(command_buffer, flags);
   observation.SetResult(result);
   return result;
@@ -2132,17 +2198,64 @@ VkExtent2D HostWindowExtent() {
           static_cast<std::uint32_t>(height())};
 }
 
-// The clamped framebuffer extent plus the per-axis factor that maps
-// full-window coordinates onto it. Returns {0, 0} when unknown.
-VkExtent2D ClampedFramebufferExtent(double* scale_x, double* scale_y) {
+// True when `image` belongs to a swapchain created while render scaling is on.
+bool IsSwapchainImage(std::uint64_t image) {
+  AdapterState& state = State();
+  std::lock_guard<std::mutex> lock(state.mutex);
+  return state.swapchain_images.count(image) != 0;
+}
+
+// True when `view` was created over a swapchain image (a present attachment).
+bool IsSwapchainView(std::uint64_t view) {
+  AdapterState& state = State();
+  std::lock_guard<std::mutex> lock(state.mutex);
+  const auto it = state.view_to_image.find(view);
+  return it != state.view_to_image.end() &&
+         state.swapchain_images.count(it->second) != 0;
+}
+
+void NoteImageViewForImage(std::uint64_t image, std::uint64_t view) {
+  AdapterState& state = State();
+  std::lock_guard<std::mutex> lock(state.mutex);
+  if (state.swapchain_images.count(image) != 0) {
+    state.view_to_image[view] = image;
+  }
+}
+
+void ForgetImageView(std::uint64_t view) {
+  AdapterState& state = State();
+  std::lock_guard<std::mutex> lock(state.mutex);
+  state.view_to_image.erase(view);
+}
+
+bool CommandBufferRendersToSwapchain(VkCommandBuffer command_buffer) {
+  AdapterState& state = State();
+  std::lock_guard<std::mutex> lock(state.mutex);
+  return state.present_pass_commands.count(
+             reinterpret_cast<std::uint64_t>(command_buffer)) != 0;
+}
+
+void SetPresentPass(VkCommandBuffer command_buffer, bool present) {
+  AdapterState& state = State();
+  std::lock_guard<std::mutex> lock(state.mutex);
+  const std::uint64_t key = reinterpret_cast<std::uint64_t>(command_buffer);
+  if (present) {
+    state.present_pass_commands.insert(key);
+  } else {
+    state.present_pass_commands.erase(key);
+  }
+}
+
+// The framebuffer the game is told the surface has (the clamped currentExtent).
+VkExtent2D AdvertisedFramebuffer() {
   VkExtent2D framebuffer{0, 0};
   {
     AdapterState& state = State();
     std::lock_guard<std::mutex> lock(state.mutex);
-    framebuffer = state.clamped_framebuffer;
+    framebuffer = state.advertised_framebuffer;
   }
-  const VkExtent2D window = HostWindowExtent();
   if (framebuffer.width == 0 || framebuffer.height == 0) {
+    const VkExtent2D window = HostWindowExtent();
     if (window.width == 0 || window.height == 0) {
       return {0, 0};
     }
@@ -2150,31 +2263,38 @@ VkExtent2D ClampedFramebufferExtent(double* scale_x, double* scale_y) {
         window, mocktail::graphics::CachedRenderScale(), {1, 1},
         {UINT32_MAX, UINT32_MAX});
   }
-  if (scale_x != nullptr) {
-    *scale_x = window.width > 0
-                   ? static_cast<double>(framebuffer.width) / window.width
-                   : 1.0;
-  }
-  if (scale_y != nullptr) {
-    *scale_y = window.height > 0
-                   ? static_cast<double>(framebuffer.height) / window.height
-                   : 1.0;
-  }
   return framebuffer;
+}
+
+// The real swapchain extent (the window) used to map present-pass rects.
+VkExtent2D RealSwapchainExtent() {
+  VkExtent2D extent{0, 0};
+  {
+    AdapterState& state = State();
+    std::lock_guard<std::mutex> lock(state.mutex);
+    extent = state.swapchain_extent;
+  }
+  if (extent.width == 0 || extent.height == 0) {
+    extent = HostWindowExtent();
+  }
+  return extent;
 }
 
 }  // namespace
 
-// MangoHud-style host render scale: when window.render_scale < 1 on this
-// backend the swapchain is clamped to that fraction of the window. Any
-// viewport / scissor / render area the game records in full-window
-// coordinates would then stick out of the smaller framebuffer (crop), so
-// here it is scaled onto the framebuffer. Rects already inside the
-// framebuffer (passes that sized themselves from the swapchain extent) are
-// left untouched - scaling those too would shrink them into a corner and
-// leave black areas. Presentation upscales the smaller framebuffer to the
-// window, so the whole game stays visible and input keeps working in the
-// game's own full-window coordinate space.
+// Host-side render scale (window.render_scale < 1, direct-vulkan backend):
+// the surface currentExtent is advertised at render_scale of the real window
+// so the game sizes its offscreen targets to that smaller framebuffer, while
+// the swapchain itself stays at the real window extent so presentation fills
+// the window (no black bars, no top-left pinning, even on WSI implementations
+// that do not upscale a smaller swapchain). Recorded rects are mapped
+// accordingly: passes rendering into offscreen targets get full-window rects
+// scaled onto the advertised framebuffer while framebuffer-sized rects are
+// left alone, and the composite pass rendering into the swapchain (detected
+// via its attachment image views in vkCmdBeginRendering) is stretched onto the
+// real swapchain extent. The window itself is not resized, so input keeps
+// mapping correctly in the game's full-window coordinate space. Scale 1.0 is
+// a passthrough; no engine flags are involved.
 VKAPI_ATTR void VKAPI_CALL vkCmdSetViewport(
     VkCommandBuffer command_buffer, std::uint32_t first_viewport,
     std::uint32_t viewport_count, const VkViewport* viewports) {
@@ -2183,19 +2303,39 @@ VKAPI_ATTR void VKAPI_CALL vkCmdSetViewport(
   if (host_set_viewport == nullptr) {
     return;
   }
-  double scale_x = 1.0, scale_y = 1.0;
-  const VkExtent2D framebuffer =
-      mocktail::graphics::HostFramebufferScaleActive()
-          ? ClampedFramebufferExtent(&scale_x, &scale_y)
-          : VkExtent2D{0, 0};
-  if (viewports == nullptr || viewport_count == 0 || framebuffer.width == 0) {
+  if (viewports == nullptr || viewport_count == 0 ||
+      !mocktail::graphics::HostFramebufferScaleActive()) {
+    host_set_viewport(command_buffer, first_viewport, viewport_count,
+                      viewports);
+    return;
+  }
+  const VkExtent2D window = HostWindowExtent();
+  const VkExtent2D advertised = AdvertisedFramebuffer();
+  if (window.width == 0 || window.height == 0 || advertised.width == 0 ||
+      advertised.height == 0) {
     host_set_viewport(command_buffer, first_viewport, viewport_count,
                       viewports);
     return;
   }
   std::vector<VkViewport> scaled(viewports, viewports + viewport_count);
-  mocktail::graphics::ScaleViewportsToFramebuffer(
-      scaled.data(), viewport_count, scale_x, scale_y, framebuffer);
+  if (CommandBufferRendersToSwapchain(command_buffer)) {
+    // Present pass: stretch rects recorded in the advertised framebuffer's
+    // coordinates onto the real (window-sized) swapchain.
+    const VkExtent2D swapchain = RealSwapchainExtent();
+    for (std::uint32_t i = 0; i < viewport_count; ++i) {
+      mocktail::graphics::MapViewportToSwapchain(&scaled[i], advertised,
+                                                 swapchain, window);
+    }
+  } else {
+    // Offscreen pass: full-window rects are scaled onto the advertised
+    // framebuffer; framebuffer-sized rects are left alone.
+    const double scale_x =
+        static_cast<double>(advertised.width) / window.width;
+    const double scale_y =
+        static_cast<double>(advertised.height) / window.height;
+    mocktail::graphics::ScaleViewportsToFramebuffer(
+        scaled.data(), viewport_count, scale_x, scale_y, advertised);
+  }
   host_set_viewport(command_buffer, first_viewport, viewport_count,
                     scaled.data());
 }
@@ -2208,21 +2348,34 @@ VKAPI_ATTR void VKAPI_CALL vkCmdSetScissor(
   if (host_set_scissor == nullptr) {
     return;
   }
-  double scale_x = 1.0, scale_y = 1.0;
-  const VkExtent2D framebuffer =
-      mocktail::graphics::HostFramebufferScaleActive()
-          ? ClampedFramebufferExtent(&scale_x, &scale_y)
-          : VkExtent2D{0, 0};
-  if (scissors == nullptr || scissor_count == 0 || framebuffer.width == 0) {
-    host_set_scissor(command_buffer, first_scissor, scissor_count,
-                     scissors);
+  if (scissors == nullptr || scissor_count == 0 ||
+      !mocktail::graphics::HostFramebufferScaleActive()) {
+    host_set_scissor(command_buffer, first_scissor, scissor_count, scissors);
+    return;
+  }
+  const VkExtent2D window = HostWindowExtent();
+  const VkExtent2D advertised = AdvertisedFramebuffer();
+  if (window.width == 0 || window.height == 0 || advertised.width == 0 ||
+      advertised.height == 0) {
+    host_set_scissor(command_buffer, first_scissor, scissor_count, scissors);
     return;
   }
   std::vector<VkRect2D> scaled(scissors, scissors + scissor_count);
-  mocktail::graphics::ScaleScissorsToFramebuffer(
-      scaled.data(), scissor_count, scale_x, scale_y, framebuffer);
-  host_set_scissor(command_buffer, first_scissor, scissor_count,
-                   scaled.data());
+  if (CommandBufferRendersToSwapchain(command_buffer)) {
+    const VkExtent2D swapchain = RealSwapchainExtent();
+    for (std::uint32_t i = 0; i < scissor_count; ++i) {
+      mocktail::graphics::MapRectToSwapchain(&scaled[i], advertised, swapchain,
+                                            window);
+    }
+  } else {
+    const double scale_x =
+        static_cast<double>(advertised.width) / window.width;
+    const double scale_y =
+        static_cast<double>(advertised.height) / window.height;
+    mocktail::graphics::ScaleScissorsToFramebuffer(
+        scaled.data(), scissor_count, scale_x, scale_y, advertised);
+  }
+  host_set_scissor(command_buffer, first_scissor, scissor_count, scaled.data());
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdSetViewportWithCount(
@@ -2256,24 +2409,66 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginRendering(
   if (host_begin == nullptr) {
     return;
   }
-  double scale_x = 1.0, scale_y = 1.0;
-  const VkExtent2D framebuffer =
-      mocktail::graphics::HostFramebufferScaleActive()
-          ? ClampedFramebufferExtent(&scale_x, &scale_y)
-          : VkExtent2D{0, 0};
-  if (rendering_info == nullptr || framebuffer.width == 0) {
+  if (rendering_info == nullptr ||
+      !mocktail::graphics::HostFramebufferScaleActive()) {
+    SetPresentPass(command_buffer, false);
+    host_begin(command_buffer, rendering_info);
+    return;
+  }
+  bool present_pass = false;
+  if (rendering_info->pColorAttachments != nullptr) {
+    for (std::uint32_t i = 0; i < rendering_info->colorAttachmentCount; ++i) {
+      const VkImageView view = rendering_info->pColorAttachments[i].imageView;
+      if (view != VK_NULL_HANDLE &&
+          IsSwapchainView(reinterpret_cast<std::uint64_t>(view))) {
+        present_pass = true;
+        break;
+      }
+    }
+  }
+  if (!present_pass && rendering_info->pDepthAttachment != nullptr &&
+      rendering_info->pDepthAttachment->imageView != VK_NULL_HANDLE &&
+      IsSwapchainView(reinterpret_cast<std::uint64_t>(
+          rendering_info->pDepthAttachment->imageView))) {
+    present_pass = true;
+  }
+  if (!present_pass && rendering_info->pStencilAttachment != nullptr &&
+      rendering_info->pStencilAttachment->imageView != VK_NULL_HANDLE &&
+      IsSwapchainView(reinterpret_cast<std::uint64_t>(
+          rendering_info->pStencilAttachment->imageView))) {
+    present_pass = true;
+  }
+  SetPresentPass(command_buffer, present_pass);
+  const VkExtent2D window = HostWindowExtent();
+  const VkExtent2D advertised = AdvertisedFramebuffer();
+  if (!present_pass || window.width == 0 || window.height == 0 ||
+      advertised.width == 0 || advertised.height == 0) {
     host_begin(command_buffer, rendering_info);
     return;
   }
   VkRenderingInfo scaled = *rendering_info;
-  mocktail::graphics::ScaleRect2DToFramebuffer(&scaled.renderArea, scale_x,
-                                               scale_y, framebuffer);
+  const VkExtent2D swapchain = RealSwapchainExtent();
+  mocktail::graphics::MapRectToSwapchain(&scaled.renderArea, advertised,
+                                        swapchain, window);
   host_begin(command_buffer, &scaled);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderingKHR(
     VkCommandBuffer command_buffer, const VkRenderingInfoKHR* rendering_info) {
   vkCmdBeginRendering(command_buffer, rendering_info);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdEndRendering(VkCommandBuffer command_buffer) {
+  const PFN_vkCmdEndRendering host_end =
+      HostDispatchForCommandBuffer(command_buffer).cmd_end_rendering;
+  SetPresentPass(command_buffer, false);
+  if (host_end != nullptr) {
+    host_end(command_buffer);
+  }
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdEndRenderingKHR(VkCommandBuffer command_buffer) {
+  vkCmdEndRendering(command_buffer);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkWaitSemaphores(
@@ -2475,12 +2670,13 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
         capabilities->currentExtent = scaled;
         AdapterState& state = State();
         std::lock_guard<std::mutex> lock(state.mutex);
+        state.advertised_framebuffer = scaled;
         if (!state.scale_extent_logged) {
           state.scale_extent_logged = true;
           std::fprintf(
               stderr,
               "  [vulkan] render_scale=%.2f surface currentExtent -> %ux%u "
-              "(full-window viewports are scaled onto it)\n",
+              "(composite pass stretched onto the window-sized swapchain)\n",
               render_scale, scaled.width, scaled.height);
         }
       }
@@ -2731,7 +2927,25 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyImage(
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateImageView(
     VkDevice device, const VkImageViewCreateInfo* create_info,
     const VkAllocationCallbacks* allocator, VkImageView* view) {
-  return State().etc2.CreateImageView(device, create_info, allocator, view);
+  const VkResult result =
+      State().etc2.CreateImageView(device, create_info, allocator, view);
+  if (result == VK_SUCCESS && create_info != nullptr && view != nullptr &&
+      create_info->image != VK_NULL_HANDLE && *view != VK_NULL_HANDLE) {
+    NoteImageViewForImage(reinterpret_cast<std::uint64_t>(create_info->image),
+                          reinterpret_cast<std::uint64_t>(*view));
+  }
+  return result;
+}
+
+VKAPI_ATTR void VKAPI_CALL vkDestroyImageView(
+    VkDevice device, VkImageView image_view,
+    const VkAllocationCallbacks* allocator) {
+  ForgetImageView(reinterpret_cast<std::uint64_t>(image_view));
+  const PFN_vkDestroyImageView host_destroy =
+      HostDispatchForDevice(device).destroy_image_view;
+  if (host_destroy != nullptr) {
+    host_destroy(device, image_view, allocator);
+  }
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkBindBufferMemory(VkDevice device,

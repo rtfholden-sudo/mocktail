@@ -231,24 +231,27 @@ Mocktail detects the host CPU and GPU at startup and records them in
   window renders at 640x325) and is upscaled to the window at present — a real
   FPS win on an Iris Xe iGPU without shrinking the window.
   `window.fxaa: true` turns on Roblox's FXAA post-process to soften the
-  upscale. On the `direct-vulkan` backend Mocktail additionally clamps the
-  Vulkan swapchain `imageExtent` to `render_scale` of the requested extent in
-  its `vkCreateSwapchainKHR` hook — a host-side framebuffer scale that needs
-  no engine flag at all, so it works even on Roblox builds that ignore
-  locally-set flags (the 2025-09-29 allowlist, which kills the DRS flag
-  injected through the host client-settings channel). The surface
-  `currentExtent` from `vkGetPhysicalDeviceSurfaceCapabilitiesKHR` is clamped
-  the same way. Because the game still works in full-window coordinates
-  (the window itself is not resized), Mocktail also scales any viewport,
-  scissor or dynamic-rendering area the game records that sticks out of
-  the smaller framebuffer — in the `vkCmdSetViewport`/`vkCmdSetScissor`/
+  upscale. On the `direct-vulkan` backend Mocktail applies a host-side
+  framebuffer scale that needs no engine flag at all, so it works even on
+  Roblox builds that ignore locally-set flags (the 2025-09-29 allowlist,
+  which kills the DRS flag injected through the host client-settings
+  channel): the surface `currentExtent` from
+  `vkGetPhysicalDeviceSurfaceCapabilitiesKHR` is reported at `render_scale`
+  of the real window, so the game sizes its offscreen render targets to that
+  smaller framebuffer, while the swapchain `imageExtent` in
+  `vkCreateSwapchainKHR` is kept at the real window size so presentation
+  always fills the window — no black bars or top-left pinning, even on WSI
+  implementations that do not upscale a smaller swapchain. Recorded rects are
+  mapped accordingly in the `vkCmdSetViewport`/`vkCmdSetScissor`/
   `vkCmdSetViewportWithCount`/`vkCmdSetScissorWithCount`/
-  `vkCmdBeginRendering` hooks — down onto the framebuffer, MangoHud-style.
-  Passes already sized to the framebuffer are left untouched (scaling those
-  too would shrink them into a corner). The full scene is therefore
-  rendered into the smaller swapchain (no crop) and presentation upscales
-  it to the window; input keeps mapping correctly because the game still
-  sees the real window size. The engine DRS flag is skipped on that
+  `vkCmdBeginRendering` hooks: passes rendering into offscreen targets get
+  full-window viewports/scissors/render areas scaled down onto the
+  advertised framebuffer (framebuffer-sized rects are left untouched), and
+  the composite pass rendering into the swapchain (detected via its
+  attachment image views in `vkCmdBeginRendering`) is stretched onto the
+  window-sized swapchain — MangoHud-style. The window itself is not resized,
+  so input keeps mapping correctly because the game still sees the real
+  window size. The engine DRS flag is skipped on that
   backend so the scale is not applied twice. On non-Vulkan
   backends only the flag path exists; if the build ignores it, lower
   `window.width`/`window.height` instead — that directly shrinks the real
