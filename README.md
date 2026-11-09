@@ -252,14 +252,21 @@ Mocktail detects the host CPU and GPU at startup and records them in
   (framebuffers over swapchain images are kept swapchain-sized), and
   blit/copy/resolve regions targeting a swapchain image — is stretched onto
   the window-sized swapchain, including viewports/scissors recorded before
-  the pass began. MangoHud-style. The window itself is not resized,
+  the pass began. A swapchain attachment is recognised both by the
+  registered swapchain images and by its extent matching the swapchain, so a
+  composite still gets stretched if the game's swapchain images were not
+  tracked. MangoHud-style. The window itself is not resized,
   so input keeps mapping correctly because the game still sees the real
   window size. The engine DRS flag is skipped on that
   backend so the scale is not applied twice. On non-Vulkan
   backends only the flag path exists; if the build ignores it, lower
   `window.width`/`window.height` instead — that directly shrinks the real
   framebuffer, which is the guaranteed lever on an iGPU. Use `logs: true` to
-  check in `latest.log` whether the DRS flag was applied.
+  check in `latest.log` whether the DRS flag was applied. With `logs: true`
+  the Vulkan adapter also prints rate-limited `[vulkan] dbg` lines
+  (`swapchain#`, `swapchain image view`, `beginRendering`, `setViewport`,
+  `blit`) that show which composite path is firing when a render scale looks
+  cropped.
 
 ## Privacy: telemetry is disabled
 
