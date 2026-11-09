@@ -172,7 +172,10 @@ window:
   # blit/copy/resolve regions targeting a swapchain image - back onto the
   # window, MangoHud-style, so the mouse stays inside. Swapchain attachments
   # are recognised by the registered swapchain images or by a matching
-  # extent; with logs on, [vulkan] dbg lines name the composite path in use.
+  # extent, or - for imageless framebuffers - by the attachment views passed
+  # at render-pass begin; images are tracked per swapchain handle so a
+  # recreated swapchain keeps detection alive. With logs on, [vulkan] dbg
+  # lines name the composite path in use.
   # It works
   # even on Roblox builds that ignore locally-set flags (2025-09-29
   # allowlist). On other backends the DRS flag (FIntAutomaticDRSHundredthPercent)

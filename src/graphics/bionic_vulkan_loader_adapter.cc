@@ -295,7 +295,12 @@ struct AdapterState {
   VkExtent2D advertised_framebuffer{0, 0};
   VkExtent2D swapchain_extent{0, 0};
   std::unordered_set<std::uint64_t> swapchain_images;
+  // Images per live swapchain handle, so destroying an old swapchain (the
+  // oldSwapchain recreation dance) does not forget the new one.
+  std::unordered_map<std::uint64_t, std::vector<std::uint64_t>>
+      swapchain_image_lists;
   std::unordered_map<std::uint64_t, std::uint64_t> view_to_image;
+  std::unordered_map<std::uint64_t, VkExtent2D> view_extents;
   std::unordered_set<std::uint64_t> present_pass_commands;
   struct RecordedPassState {
     std::uint32_t first_viewport = 0;
@@ -2063,10 +2068,15 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
     {
       AdapterState& state = State();
       std::lock_guard<std::mutex> lock(state.mutex);
+      std::vector<std::uint64_t>& list =
+          state.swapchain_image_lists[reinterpret_cast<std::uint64_t>(
+              *swapchain)];
+      list.clear();
       for (const VkImage image : images) {
-        state.swapchain_images.insert(reinterpret_cast<std::uint64_t>(image));
-        state.image_extents[reinterpret_cast<std::uint64_t>(image)] =
-            host_info.imageExtent;
+        const std::uint64_t key = reinterpret_cast<std::uint64_t>(image);
+        state.swapchain_images.insert(key);
+        state.image_extents[key] = host_info.imageExtent;
+        list.push_back(key);
       }
       static std::atomic<int> swapchain_dbg{0};
       if (swapchain_dbg.fetch_add(1) < 4) {
@@ -2087,22 +2097,50 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
 VKAPI_ATTR void VKAPI_CALL
 vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain,
                       const VkAllocationCallbacks* allocator) {
+  {
+    static std::atomic<int> destroy_dbg{0};
+    if (destroy_dbg.fetch_add(1) < 6) {
+      AdapterState& state = State();
+      std::lock_guard<std::mutex> lock(state.mutex);
+      std::fprintf(stderr,
+                   "  [vulkan] dbg destroySwapchain#%d live_swapchains=%u "
+                   "registered_images=%u\n",
+                   destroy_dbg.load(),
+                   static_cast<unsigned>(state.swapchain_image_lists.size()),
+                   static_cast<unsigned>(state.swapchain_images.size()));
+    }
+  }
   const auto host_destroy = reinterpret_cast<PFN_vkDestroySwapchainKHR>(
       HostDeviceProc(device, "vkDestroySwapchainKHR"));
   {
     AdapterState& state = State();
     std::lock_guard<std::mutex> lock(state.mutex);
-    for (auto it = state.view_to_image.begin(); it != state.view_to_image.end();) {
-      if (state.swapchain_images.count(it->second) != 0) {
-        it = state.view_to_image.erase(it);
-      } else {
-        ++it;
+    const auto swapchain_it = state.swapchain_image_lists.find(
+        reinterpret_cast<std::uint64_t>(swapchain));
+    if (swapchain_it != state.swapchain_image_lists.end()) {
+      // Rebuild the global set from the swapchains that are still alive: a
+      // destroyed oldSwapchain must not forget the freshly created swapchain.
+      const std::vector<std::uint64_t> dead = swapchain_it->second;
+      state.swapchain_image_lists.erase(swapchain_it);
+      std::unordered_set<std::uint64_t> live;
+      for (const auto& entry : state.swapchain_image_lists) {
+        live.insert(entry.second.begin(), entry.second.end());
+      }
+      for (const std::uint64_t image : dead) {
+        if (live.count(image) == 0) {
+          state.image_extents.erase(image);
+        }
+      }
+      state.swapchain_images = std::move(live);
+      for (auto it = state.view_to_image.begin();
+           it != state.view_to_image.end();) {
+        if (state.swapchain_images.count(it->second) == 0) {
+          it = state.view_to_image.erase(it);
+        } else {
+          ++it;
+        }
       }
     }
-    for (const auto& entry : state.view_to_image) {
-      state.image_extents.erase(entry.second);
-    }
-    state.swapchain_images.clear();
   }
   State().text_overlay.DestroySwapchain(device, swapchain);
   if (host_destroy != nullptr) {
@@ -2386,15 +2424,19 @@ bool IsSwapchainView(std::uint64_t view) {
   AdapterState& state = State();
   std::lock_guard<std::mutex> lock(state.mutex);
   const auto it = state.view_to_image.find(view);
-  if (it == state.view_to_image.end()) {
-    return false;
-  }
-  if (state.swapchain_images.count(it->second) != 0) {
+  if (it != state.view_to_image.end() &&
+      state.swapchain_images.count(it->second) != 0) {
     return true;
   }
-  const auto ext = state.image_extents.find(it->second);
-  return ext != state.image_extents.end() && state.swapchain_extent.width != 0 &&
-         state.swapchain_extent.height != 0 &&
+  // Fallback that does not depend on the image bookkeeping: a view whose
+  // image is swapchain-sized is treated as a present attachment. A
+  // window-sized offscreen view misclassified as present is harmless because
+  // the swapchain mapping leaves window-sized rects untouched.
+  if (state.swapchain_extent.width == 0 || state.swapchain_extent.height == 0) {
+    return false;
+  }
+  const auto ext = state.view_extents.find(view);
+  return ext != state.view_extents.end() &&
          ext->second.width == state.swapchain_extent.width &&
          ext->second.height == state.swapchain_extent.height;
 }
@@ -2402,6 +2444,10 @@ bool IsSwapchainView(std::uint64_t view) {
 void NoteImageViewForImage(std::uint64_t image, std::uint64_t view) {
   AdapterState& state = State();
   std::lock_guard<std::mutex> lock(state.mutex);
+  const auto extent = state.image_extents.find(image);
+  if (extent != state.image_extents.end()) {
+    state.view_extents[view] = extent->second;
+  }
   if (state.swapchain_images.count(image) != 0) {
     state.view_to_image[view] = image;
     static std::atomic<int> view_dbg{0};
@@ -2416,6 +2462,7 @@ void ForgetImageView(std::uint64_t view) {
   AdapterState& state = State();
   std::lock_guard<std::mutex> lock(state.mutex);
   state.view_to_image.erase(view);
+  state.view_extents.erase(view);
 }
 
 bool CommandBufferRendersToSwapchain(VkCommandBuffer command_buffer) {
@@ -2813,13 +2860,34 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateFramebuffer(
   }
   VkFramebufferCreateInfo host_info = *create_info;
   bool swapchain_fb = false;
-  if (mocktail::graphics::HostFramebufferScaleActive() &&
-      create_info->pAttachments != nullptr) {
-    for (std::uint32_t i = 0; i < create_info->attachmentCount; ++i) {
-      if (IsSwapchainView(
-              reinterpret_cast<std::uint64_t>(create_info->pAttachments[i]))) {
+  if (mocktail::graphics::HostFramebufferScaleActive()) {
+    // Imageless framebuffers pass their attachment views out of band; a
+    // reported size equal to the advertised framebuffer means the engine is
+    // sizing this framebuffer for what it believes the swapchain to be.
+    const auto* imageless = reinterpret_cast<
+        const VkFramebufferAttachmentsCreateInfo*>(create_info->pNext);
+    while (imageless != nullptr &&
+           imageless->sType !=
+               VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO) {
+      imageless = reinterpret_cast<const VkFramebufferAttachmentsCreateInfo*>(
+          reinterpret_cast<const VkBaseInStructure*>(imageless)->pNext);
+    }
+    if (create_info->pAttachments == nullptr && imageless != nullptr) {
+      const VkExtent2D advertised = AdvertisedFramebuffer();
+      const VkExtent2D swapchain = RealSwapchainExtent();
+      if (advertised.width != 0 && swapchain.width != 0 &&
+          create_info->width == advertised.width &&
+          create_info->height == advertised.height) {
         swapchain_fb = true;
-        break;
+      }
+    }
+    if (!swapchain_fb && create_info->pAttachments != nullptr) {
+      for (std::uint32_t i = 0; i < create_info->attachmentCount; ++i) {
+        if (IsSwapchainView(reinterpret_cast<std::uint64_t>(
+                create_info->pAttachments[i]))) {
+          swapchain_fb = true;
+          break;
+        }
       }
     }
     if (swapchain_fb) {
@@ -2830,7 +2898,18 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateFramebuffer(
       }
     }
   }
-  const VkResult result = host_create(device, &host_info, allocator, framebuffer);
+  const VkResult result =
+      host_create(device, &host_info, allocator, framebuffer);
+  {
+    static std::atomic<int> fb_dbg{0};
+    if (fb_dbg.fetch_add(1) < 8) {
+      std::fprintf(stderr,
+                   "  [vulkan] dbg framebuffer#%d %ux%u attachments=%u "
+                   "swapchain=%d\n",
+                   fb_dbg.load(), host_info.width, host_info.height,
+                   create_info->attachmentCount, swapchain_fb ? 1 : 0);
+    }
+  }
   if (result == VK_SUCCESS && swapchain_fb) {
     NoteFramebuffer(reinterpret_cast<std::uint64_t>(*framebuffer), true);
   }
@@ -2848,6 +2927,54 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyFramebuffer(
   }
 }
 
+// True when this render pass writes into a swapchain image, either via a
+// framebuffer created over swapchain views (enlarged in vkCreateFramebuffer)
+// or via imageless-framebuffer attachment views supplied here.
+bool RenderPassTargetsSwapchain(const VkRenderPassBeginInfo* begin_info) {
+  if (!mocktail::graphics::HostFramebufferScaleActive() || begin_info == nullptr) {
+    return false;
+  }
+  if (IsSwapchainFramebuffer(
+          reinterpret_cast<std::uint64_t>(begin_info->framebuffer))) {
+    return true;
+  }
+  const auto* attachments = reinterpret_cast<
+      const VkRenderPassAttachmentBeginInfo*>(begin_info->pNext);
+  while (attachments != nullptr &&
+         attachments->sType !=
+             VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO) {
+    attachments = reinterpret_cast<const VkRenderPassAttachmentBeginInfo*>(
+        reinterpret_cast<const VkBaseInStructure*>(attachments)->pNext);
+  }
+  if (attachments == nullptr) {
+    return false;
+  }
+  for (std::uint32_t i = 0; i < attachments->attachmentCount; ++i) {
+    if (IsSwapchainView(
+            reinterpret_cast<std::uint64_t>(attachments->pAttachments[i]))) {
+      NoteFramebuffer(
+          reinterpret_cast<std::uint64_t>(begin_info->framebuffer), true);
+      return true;
+    }
+  }
+  return false;
+}
+
+void LogBeginRenderPass(const VkRenderPassBeginInfo* begin_info, bool present) {
+  static std::atomic<int> rp_dbg{0};
+  if (rp_dbg.fetch_add(1) >= 10) {
+    return;
+  }
+  std::fprintf(stderr,
+               "  [vulkan] dbg beginRenderPass#%d present=%d renderArea=%d,%d "
+               "%ux%u\n",
+               rp_dbg.load(), present ? 1 : 0,
+               begin_info != nullptr ? begin_info->renderArea.offset.x : 0,
+               begin_info != nullptr ? begin_info->renderArea.offset.y : 0,
+               begin_info != nullptr ? begin_info->renderArea.extent.width : 0,
+               begin_info != nullptr ? begin_info->renderArea.extent.height : 0);
+}
+
 VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(
     VkCommandBuffer command_buffer, const VkRenderPassBeginInfo* begin_info,
     VkSubpassContents contents) {
@@ -2856,10 +2983,8 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(
   if (host_begin == nullptr) {
     return;
   }
-  const bool present =
-      mocktail::graphics::HostFramebufferScaleActive() && begin_info != nullptr &&
-      IsSwapchainFramebuffer(
-          reinterpret_cast<std::uint64_t>(begin_info->framebuffer));
+  const bool present = RenderPassTargetsSwapchain(begin_info);
+  LogBeginRenderPass(begin_info, present);
   SetPresentPass(command_buffer, present);
   if (!present || begin_info == nullptr) {
     host_begin(command_buffer, begin_info, contents);
@@ -2889,11 +3014,8 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass2(
   if (host_begin == nullptr) {
     return;
   }
-  const bool present =
-      mocktail::graphics::HostFramebufferScaleActive() &&
-      render_pass_begin != nullptr &&
-      IsSwapchainFramebuffer(reinterpret_cast<std::uint64_t>(
-          render_pass_begin->framebuffer));
+  const bool present = RenderPassTargetsSwapchain(render_pass_begin);
+  LogBeginRenderPass(render_pass_begin, present);
   SetPresentPass(command_buffer, present);
   if (!present || render_pass_begin == nullptr) {
     host_begin(command_buffer, render_pass_begin, subpass_begin_info);
@@ -3728,6 +3850,16 @@ VKAPI_ATTR void VKAPI_CALL vkCmdCopyImage(
     VkImageLayout source_layout, VkImage destination,
     VkImageLayout destination_layout, std::uint32_t region_count,
     const VkImageCopy* regions) {
+  {
+    static std::atomic<int> copy_dbg{0};
+    if (copy_dbg.fetch_add(1) < 8 && regions != nullptr) {
+      std::fprintf(stderr,
+                   "  [vulkan] dbg copyImage#%d dst=%d,%d %ux%u\n",
+                   copy_dbg.load(), regions[0].dstOffset.x,
+                   regions[0].dstOffset.y, regions[0].extent.width,
+                   regions[0].extent.height);
+    }
+  }
   const VkImageCopy* effective = regions;
   std::vector<VkImageCopy> scaled;
   if (mocktail::graphics::HostFramebufferScaleActive() && regions != nullptr &&
