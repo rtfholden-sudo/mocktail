@@ -1855,9 +1855,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
           current_extent = capabilities.currentExtent;
         }
       }
-      VkExtent2D real_window = current_extent;
-      if (real_window.width == 0 || real_window.width == UINT32_MAX ||
-          real_window.height == 0 || real_window.height == UINT32_MAX) {
+      // The live SDL window exports are authoritative for the real window
+      // extent; the host caps currentExtent is only a fallback (it can lag a
+      // resize or report UINT32_MAX on Android-style WSI).
+      VkExtent2D real_window{0, 0};
+      {
         const WindowDimensionFn window_width =
             ResolveProcessFunction<WindowDimensionFn>("mocktail_window_width");
         const WindowDimensionFn window_height =
@@ -1866,6 +1868,18 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
             window_width() > 0 && window_height() > 0) {
           real_window = {static_cast<std::uint32_t>(window_width()),
                          static_cast<std::uint32_t>(window_height())};
+        }
+      }
+      if (real_window.width == 0 || real_window.height == 0 ||
+          current_extent.width == UINT32_MAX ||
+          current_extent.height == UINT32_MAX) {
+        // keep the host-reported extent only when it is a real extent
+      }
+      if (real_window.width == 0 || real_window.height == 0) {
+        if (current_extent.width != 0 && current_extent.width != UINT32_MAX &&
+            current_extent.height != 0 &&
+            current_extent.height != UINT32_MAX) {
+          real_window = current_extent;
         }
       }
       if (real_window.width != 0 && real_window.height != 0) {
@@ -2092,6 +2106,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkAllocateCommandBuffers(
   return result;
 }
 
+namespace {
+void SetPresentPass(VkCommandBuffer command_buffer, bool present);
+}  // namespace
+
 VKAPI_ATTR void VKAPI_CALL vkFreeCommandBuffers(
     VkDevice device, VkCommandPool command_pool,
     std::uint32_t command_buffer_count,
@@ -2106,6 +2124,7 @@ VKAPI_ATTR void VKAPI_CALL vkFreeCommandBuffers(
   if (command_buffers != nullptr) {
     for (std::uint32_t index = 0; index < command_buffer_count; ++index) {
       State().etc2.ReleaseCommandBuffer(command_buffers[index]);
+      SetPresentPass(command_buffers[index], false);
     }
   }
   host_free(device, command_pool, command_buffer_count, command_buffers);
@@ -2125,6 +2144,11 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyCommandPool(
     return;
   }
   ReleaseEtc2PoolCommandBuffers(device, command_pool);
+  {
+    AdapterState& state = State();
+    std::lock_guard<std::mutex> lock(state.mutex);
+    state.present_pass_commands.clear();
+  }
   host_destroy(device, command_pool, allocator);
   RemoveHostCommandPoolBindings(device, command_pool);
   observation.SetResult(VK_SUCCESS);
@@ -2141,6 +2165,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkBeginCommandBuffer(
     return VK_ERROR_INITIALIZATION_FAILED;
   }
   State().etc2.ReleaseCommandBuffer(command_buffer);
+  SetPresentPass(command_buffer, false);
   const VkResult result = host_begin(command_buffer, begin_info);
   observation.SetResult(result);
   return result;

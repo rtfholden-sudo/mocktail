@@ -213,12 +213,20 @@ void ScaleRect2DBy(VkRect2D* rect, double scale_x, double scale_y) {
   if (rect == nullptr) {
     return;
   }
-  rect->offset.x = static_cast<std::int32_t>(rect->offset.x * scale_x);
-  rect->offset.y = static_cast<std::int32_t>(rect->offset.y * scale_y);
-  rect->extent.width =
-      static_cast<std::uint32_t>(rect->extent.width * scale_x);
-  rect->extent.height =
-      static_cast<std::uint32_t>(rect->extent.height * scale_y);
+  // Scale both edges (not offset + truncated extent) so a rect that exactly
+  // covers the source extent lands exactly on the scaled target extent.
+  const std::int64_t x1 = std::llround(rect->offset.x * scale_x);
+  const std::int64_t y1 = std::llround(rect->offset.y * scale_y);
+  const std::int64_t x2 = std::llround(
+      (static_cast<std::int64_t>(rect->offset.x) + rect->extent.width) *
+      scale_x);
+  const std::int64_t y2 = std::llround(
+      (static_cast<std::int64_t>(rect->offset.y) + rect->extent.height) *
+      scale_y);
+  rect->offset.x = static_cast<std::int32_t>(x1);
+  rect->offset.y = static_cast<std::int32_t>(y1);
+  rect->extent.width = static_cast<std::uint32_t>(x2 - x1);
+  rect->extent.height = static_cast<std::uint32_t>(y2 - y1);
 }
 
 void ScaleViewportsBy(VkViewport* viewports, std::uint32_t count,
@@ -227,10 +235,18 @@ void ScaleViewportsBy(VkViewport* viewports, std::uint32_t count,
     return;
   }
   for (std::uint32_t i = 0; i < count; ++i) {
-    viewports[i].x *= static_cast<float>(scale_x);
-    viewports[i].y *= static_cast<float>(scale_y);
-    viewports[i].width *= static_cast<float>(scale_x);
-    viewports[i].height *= static_cast<float>(scale_y);
+    // Scale both edges in double precision so a viewport that exactly covers
+    // the source extent lands exactly on the scaled target extent.
+    const double x = viewports[i].x;
+    const double y = viewports[i].y;
+    const double right = x + viewports[i].width;
+    const double bottom = y + viewports[i].height;
+    viewports[i].x = static_cast<float>(x * scale_x);
+    viewports[i].y = static_cast<float>(y * scale_y);
+    viewports[i].width =
+        static_cast<float>(right * scale_x - x * scale_x);
+    viewports[i].height =
+        static_cast<float>(bottom * scale_y - y * scale_y);
   }
 }
 
