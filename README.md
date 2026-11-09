@@ -244,12 +244,15 @@ Mocktail detects the host CPU and GPU at startup and records them in
   implementations that do not upscale a smaller swapchain. Recorded rects are
   mapped accordingly in the `vkCmdSetViewport`/`vkCmdSetScissor`/
   `vkCmdSetViewportWithCount`/`vkCmdSetScissorWithCount`/
-  `vkCmdBeginRendering` hooks: passes rendering into offscreen targets get
-  full-window viewports/scissors/render areas scaled down onto the
-  advertised framebuffer (framebuffer-sized rects are left untouched), and
-  the composite pass rendering into the swapchain (detected via its
-  attachment image views in `vkCmdBeginRendering`) is stretched onto the
-  window-sized swapchain — MangoHud-style. The window itself is not resized,
+  `vkCmdBeginRendering`/`vkCmdBeginRenderPass` hooks: passes rendering into
+  offscreen targets get full-window viewports/scissors/render areas scaled
+  down onto the advertised framebuffer (framebuffer-sized rects are left
+  untouched), while everything that lands in the swapchain — dynamic-rendering
+  passes (detected via their attachment image views), legacy render passes
+  (framebuffers over swapchain images are kept swapchain-sized), and
+  blit/copy/resolve regions targeting a swapchain image — is stretched onto
+  the window-sized swapchain, including viewports/scissors recorded before
+  the pass began. MangoHud-style. The window itself is not resized,
   so input keeps mapping correctly because the game still sees the real
   window size. The engine DRS flag is skipped on that
   backend so the scale is not applied twice. On non-Vulkan

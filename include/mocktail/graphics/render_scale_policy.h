@@ -87,6 +87,16 @@ void MapRectToSwapchain(VkRect2D* rect, VkExtent2D advertised,
 void MapViewportToSwapchain(VkViewport* viewport, VkExtent2D advertised,
                             VkExtent2D swapchain, VkExtent2D window);
 
+// Same mapping for vkCmdBlitImage regions (two corner offsets) and for
+// vkCmdCopyImage/vkCmdResolveImage regions (offset + extent): the rect is
+// mapped onto the swapchain and written back through the out-params.
+void MapOffsets3DToSwapchain(VkOffset3D* corner_a, VkOffset3D* corner_b,
+                             VkExtent2D advertised, VkExtent2D swapchain,
+                             VkExtent2D window);
+void MapOffsetExtentToSwapchain(VkOffset3D* offset, VkExtent3D* extent,
+                                VkExtent2D advertised, VkExtent2D swapchain,
+                                VkExtent2D window);
+
 } // namespace graphics
 } // namespace mocktail
 

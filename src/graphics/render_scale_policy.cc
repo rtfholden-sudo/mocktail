@@ -289,5 +289,37 @@ void MapViewportToSwapchain(VkViewport* viewport, VkExtent2D advertised,
   }
 }
 
+void MapOffsets3DToSwapchain(VkOffset3D* corner_a, VkOffset3D* corner_b,
+                             VkExtent2D advertised, VkExtent2D swapchain,
+                             VkExtent2D window) {
+  if (corner_a == nullptr || corner_b == nullptr) {
+    return;
+  }
+  VkRect2D rect{{corner_a->x, corner_a->y},
+                {static_cast<std::uint32_t>(std::max(
+                     0, corner_b->x - corner_a->x)),
+                 static_cast<std::uint32_t>(std::max(
+                     0, corner_b->y - corner_a->y))}};
+  MapRectToSwapchain(&rect, advertised, swapchain, window);
+  corner_a->x = rect.offset.x;
+  corner_a->y = rect.offset.y;
+  corner_b->x = rect.offset.x + static_cast<std::int32_t>(rect.extent.width);
+  corner_b->y = rect.offset.y + static_cast<std::int32_t>(rect.extent.height);
+}
+
+void MapOffsetExtentToSwapchain(VkOffset3D* offset, VkExtent3D* extent,
+                                VkExtent2D advertised, VkExtent2D swapchain,
+                                VkExtent2D window) {
+  if (offset == nullptr || extent == nullptr) {
+    return;
+  }
+  VkRect2D rect{{offset->x, offset->y}, {extent->width, extent->height}};
+  MapRectToSwapchain(&rect, advertised, swapchain, window);
+  offset->x = rect.offset.x;
+  offset->y = rect.offset.y;
+  extent->width = rect.extent.width;
+  extent->height = rect.extent.height;
+}
+
 } // namespace graphics
 } // namespace mocktail

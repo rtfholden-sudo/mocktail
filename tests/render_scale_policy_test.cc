@@ -251,6 +251,36 @@ TEST(RenderScalePolicyTest, PresentPassFillsWindowAtLowScale) {
   EXPECT_FLOAT_EQ(off_fb.height, 538.0f);
 }
 
+TEST(RenderScalePolicyTest, MapsBlitAndCopyRegionsOntoTheSwapchain) {
+  // Latest run geometry: window 1280x650, render_scale 0.5 -> advertised
+  // 640x325, swapchain kept at the window 1280x650.
+  const VkExtent2D window{1280, 650};
+  const VkExtent2D advertised =
+      ScaleSwapchainExtent(window, 0.5, {1, 1}, {UINT32_MAX, UINT32_MAX});
+  EXPECT_EQ(advertised.width, 640u);
+  EXPECT_EQ(advertised.height, 325u);
+  const VkExtent2D swapchain = window;
+  // vkCmdBlitImage dst region (two corners) into the swapchain
+  VkOffset3D a{0, 0, 0}, b{640, 325, 1};
+  MapOffsets3DToSwapchain(&a, &b, advertised, swapchain, window);
+  EXPECT_EQ(a.x, 0);
+  EXPECT_EQ(b.x, 1280);
+  EXPECT_EQ(b.y, 650);
+  EXPECT_EQ(b.z, 1);
+  // vkCmdCopyImage/vkCmdResolveImage dst region (offset + extent)
+  VkOffset3D off{0, 0, 0};
+  VkExtent3D ext{640, 325, 1};
+  MapOffsetExtentToSwapchain(&off, &ext, advertised, swapchain, window);
+  EXPECT_EQ(ext.width, 1280u);
+  EXPECT_EQ(ext.height, 650u);
+  EXPECT_EQ(ext.depth, 1u);
+  // present-pass renderArea stretches exactly onto the swapchain
+  VkRect2D ra{{0, 0}, {640u, 325u}};
+  MapRectToSwapchain(&ra, advertised, swapchain, window);
+  EXPECT_EQ(ra.extent.width, 1280u);
+  EXPECT_EQ(ra.extent.height, 650u);
+}
+
 }  // namespace
 }  // namespace graphics
 }  // namespace mocktail
