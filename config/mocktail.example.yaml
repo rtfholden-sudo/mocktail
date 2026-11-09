@@ -170,7 +170,10 @@ window:
   # to the framebuffer are left alone) and stretches everything that lands in
   # the swapchain - dynamic-rendering passes, legacy render passes, and
   # blit/copy/resolve regions targeting a swapchain image - back onto the
-  # window, MangoHud-style, so the mouse stays inside. It works
+  # window, MangoHud-style, so the mouse stays inside. Swapchain attachments
+  # are recognised by the registered swapchain images or by a matching
+  # extent; with logs on, [vulkan] dbg lines name the composite path in use.
+  # It works
   # even on Roblox builds that ignore locally-set flags (2025-09-29
   # allowlist). On other backends the DRS flag (FIntAutomaticDRSHundredthPercent)
   # is used instead and is ignored by allowlisted builds - then lower

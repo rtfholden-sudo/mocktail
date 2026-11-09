@@ -305,6 +305,7 @@ struct AdapterState {
   };
   std::unordered_map<std::uint64_t, RecordedPassState> recorded_pass_state;
   std::unordered_set<std::uint64_t> swapchain_framebuffers;
+  std::unordered_map<std::uint64_t, VkExtent2D> image_extents;
   bool present_policy_logged = false;
   bool initialized = false;
 };
@@ -2064,6 +2065,19 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
       std::lock_guard<std::mutex> lock(state.mutex);
       for (const VkImage image : images) {
         state.swapchain_images.insert(reinterpret_cast<std::uint64_t>(image));
+        state.image_extents[reinterpret_cast<std::uint64_t>(image)] =
+            host_info.imageExtent;
+      }
+      static std::atomic<int> swapchain_dbg{0};
+      if (swapchain_dbg.fetch_add(1) < 4) {
+        std::fprintf(stderr,
+                     "  [vulkan] dbg swapchain#%d extent=%ux%u registered "
+                     "images=%u advertised=%ux%u\n",
+                     swapchain_dbg.load(), host_info.imageExtent.width,
+                     host_info.imageExtent.height,
+                     static_cast<unsigned>(images.size()),
+                     state.advertised_framebuffer.width,
+                     state.advertised_framebuffer.height);
       }
     }
   }
@@ -2084,6 +2098,9 @@ vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain,
       } else {
         ++it;
       }
+    }
+    for (const auto& entry : state.view_to_image) {
+      state.image_extents.erase(entry.second);
     }
     state.swapchain_images.clear();
   }
@@ -2361,12 +2378,25 @@ bool IsSwapchainImage(std::uint64_t image) {
 }
 
 // True when `view` was created over a swapchain image (a present attachment).
+// Falls back to the recorded image extent matching the real swapchain extent,
+// so detection still works if swapchain image registration failed; a W-sized
+// offscreen image misclassified as present is harmless because the swapchain
+// mapping leaves W-sized rects untouched.
 bool IsSwapchainView(std::uint64_t view) {
   AdapterState& state = State();
   std::lock_guard<std::mutex> lock(state.mutex);
   const auto it = state.view_to_image.find(view);
-  return it != state.view_to_image.end() &&
-         state.swapchain_images.count(it->second) != 0;
+  if (it == state.view_to_image.end()) {
+    return false;
+  }
+  if (state.swapchain_images.count(it->second) != 0) {
+    return true;
+  }
+  const auto ext = state.image_extents.find(it->second);
+  return ext != state.image_extents.end() && state.swapchain_extent.width != 0 &&
+         state.swapchain_extent.height != 0 &&
+         ext->second.width == state.swapchain_extent.width &&
+         ext->second.height == state.swapchain_extent.height;
 }
 
 void NoteImageViewForImage(std::uint64_t image, std::uint64_t view) {
@@ -2374,6 +2404,11 @@ void NoteImageViewForImage(std::uint64_t image, std::uint64_t view) {
   std::lock_guard<std::mutex> lock(state.mutex);
   if (state.swapchain_images.count(image) != 0) {
     state.view_to_image[view] = image;
+    static std::atomic<int> view_dbg{0};
+    const int n = view_dbg.fetch_add(1);
+    if (n < 4 || n % 32 == 0) {
+      std::fprintf(stderr, "  [vulkan] dbg swapchain image view #%d\n", n + 1);
+    }
   }
 }
 
@@ -2576,6 +2611,16 @@ VKAPI_ATTR void VKAPI_CALL vkCmdSetViewport(
                       viewports);
     return;
   }
+  {
+    static std::atomic<int> vp_dbg{0};
+    if (vp_dbg.fetch_add(1) < 12) {
+      std::fprintf(stderr,
+                   "  [vulkan] dbg setViewport#%d present=%d vp=%gx%g\n",
+                   vp_dbg.load(),
+                   CommandBufferRendersToSwapchain(command_buffer) ? 1 : 0,
+                   viewports[0].width, viewports[0].height);
+    }
+  }
   std::vector<VkViewport> scaled(viewports, viewports + viewport_count);
   if (CommandBufferRendersToSwapchain(command_buffer)) {
     // Present pass: stretch rects recorded in the advertised framebuffer's
@@ -2702,6 +2747,26 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginRendering(
     present_pass = true;
   }
   SetPresentPass(command_buffer, present_pass);
+  {
+    static std::atomic<int> pass_dbg{0};
+    if (pass_dbg.fetch_add(1) < 12) {
+      bool first_swap = false;
+      if (rendering_info->pColorAttachments != nullptr &&
+          rendering_info->colorAttachmentCount > 0) {
+        const VkImageView v0 = rendering_info->pColorAttachments[0].imageView;
+        first_swap = v0 != VK_NULL_HANDLE &&
+                     IsSwapchainView(reinterpret_cast<std::uint64_t>(v0));
+      }
+      std::fprintf(stderr,
+                   "  [vulkan] dbg beginRendering#%d present=%d colors=%u "
+                   "renderArea=%ux%u firstViewSwap=%d\n",
+                   pass_dbg.load(), present_pass ? 1 : 0,
+                   rendering_info->colorAttachmentCount,
+                   rendering_info->renderArea.extent.width,
+                   rendering_info->renderArea.extent.height,
+                   first_swap ? 1 : 0);
+    }
+  }
   const VkExtent2D window = HostWindowExtent();
   const VkExtent2D advertised = AdvertisedFramebuffer();
   if (!present_pass || window.width == 0 || window.height == 0 ||
@@ -2914,6 +2979,17 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBlitImage(
     host_blit(command_buffer, src_image, src_image_layout, dst_image,
               dst_image_layout, region_count, regions, filter);
     return;
+  }
+  {
+    static std::atomic<int> blit_dbg{0};
+    if (blit_dbg.fetch_add(1) < 8) {
+      std::fprintf(stderr,
+                   "  [vulkan] dbg blit#%d srcSwap=%d dstSwap=%d "
+                   "dst=%d,%d->%d,%d\n",
+                   blit_dbg.load(), src_swap ? 1 : 0, dst_swap ? 1 : 0,
+                   regions[0].dstOffsets[0].x, regions[0].dstOffsets[0].y,
+                   regions[0].dstOffsets[1].x, regions[0].dstOffsets[1].y);
+    }
   }
   std::vector<VkImageBlit> scaled(regions, regions + region_count);
   for (std::uint32_t i = 0; i < region_count; ++i) {
@@ -3536,11 +3612,25 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties2(
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateImage(
     VkDevice device, const VkImageCreateInfo* create_info,
     const VkAllocationCallbacks* allocator, VkImage* image) {
-  return State().etc2.CreateImage(device, create_info, allocator, image);
+  const VkResult result =
+      State().etc2.CreateImage(device, create_info, allocator, image);
+  if (result == VK_SUCCESS && create_info != nullptr && image != nullptr &&
+      *image != VK_NULL_HANDLE) {
+    AdapterState& state = State();
+    std::lock_guard<std::mutex> lock(state.mutex);
+    state.image_extents[reinterpret_cast<std::uint64_t>(*image)] =
+        {create_info->extent.width, create_info->extent.height};
+  }
+  return result;
 }
 
 VKAPI_ATTR void VKAPI_CALL vkDestroyImage(
     VkDevice device, VkImage image, const VkAllocationCallbacks* allocator) {
+  {
+    AdapterState& state = State();
+    std::lock_guard<std::mutex> lock(state.mutex);
+    state.image_extents.erase(reinterpret_cast<std::uint64_t>(image));
+  }
   State().etc2.DestroyImage(device, image, allocator);
 }
 
