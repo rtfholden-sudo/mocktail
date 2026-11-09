@@ -257,9 +257,9 @@ Mocktail detects the host CPU and GPU at startup and records them in
   framebuffers - by the attachment views passed at render-pass begin; images
   are tracked per swapchain handle, so an engine that recreates its swapchain
   (oldSwapchain dance) keeps detection alive. MangoHud-style. The window
-  itself is not resized,
-  so input keeps mapping correctly because the game still sees the real
-  window size. The engine DRS flag is skipped on that
+  itself is not resized, and pointer coordinates plus text-box/IME geometry
+  are mapped into that same render-scaled frame, so the in-game cursor stays
+  under the real cursor. The engine DRS flag is skipped on that
   backend so the scale is not applied twice. On non-Vulkan
   backends only the flag path exists; if the build ignores it, lower
   `window.width`/`window.height` instead — that directly shrinks the real
